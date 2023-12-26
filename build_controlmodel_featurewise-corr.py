@@ -8,7 +8,7 @@ import time
 from utils import train_data_normalization, Timer, net_size_info
 
 
-subs = ['sub-01', 'sub-02', 'sub-06', 'sub-07', 'sub-03', 'sub-04',  'sub-05', 'sub-08'] # 
+subs = ['sub-09'] # 'sub-01', 'sub-02', 'sub-06', 'sub-07', 'sub-03', 'sub-04',  'sub-05', 'sub-08'
 # subs = [] # 
 sub = subs[-1]
 sleep_time = 5200*(subs.index(sub)+1)

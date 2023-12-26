@@ -2,18 +2,84 @@ import os
 import numpy as np
 import nibabel as nib
 from sklearn.linear_model import LinearRegression
-import joblib
+from scipy import stats
 from joblib import Parallel, delayed
 import time 
 from utils import train_data_normalization, Timer, net_size_info
+
 
 # Define the 2D Gaussian function
 def gaussian_2d(coords, A, x_0, y_0, sigma_x, sigma_y,C):
     i, j = coords
     return A * np.exp(-((i - x_0)**2 / (2 * sigma_x**2) + (j - y_0)**2 / (2 * sigma_y**2))) + C
 
+def compute_partial_correlation_fast(X, y):
+    n_samples, n_features = X.shape
+
+    # 计算特征之间的相关矩阵
+    corr_matrix = np.corrcoef(X, rowvar=False)
+
+    # 计算特征和因变量之间的相关系数
+    corr_with_y = np.array([stats.pearsonr(X[:, i], y)[0] for i in range(n_features)])
+
+    # 存储每个特征的偏相关系数
+    partial_correlations = np.zeros(n_features)
+
+    for i in range(n_features):
+        # 提取与当前特征相关的部分
+        partial_corr_matrix = np.delete(np.delete(corr_matrix, i, axis=0), i, axis=1)
+        corr_with_y_except_current = np.delete(corr_with_y, i)
+
+        # 计算偏相关
+        beta = np.linalg.solve(partial_corr_matrix, corr_with_y_except_current)
+        partial_correlation = corr_with_y[i] - beta.dot(corr_with_y_except_current)
+        partial_correlations[i] = partial_correlation / np.sqrt(1 - beta.dot(corr_with_y_except_current))
+
+    return partial_correlations
+
+def compute_partial_correlation(idx, voxel):
+
+    global X, y, i, j
+
+    n_features = X.shape[1]
+    partial_correlations = np.nan*np.zeros(n_features)
+    # load receptive field
+    if not voxel in guassparams.keys():
+        pass
+    else:
+        print(f'{idx}={voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
+        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        # load receptive field
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
+        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))
+        y_voxel = y[:, idx]
+        for ifeature in range(n_features):
+            # 选择当前特征和剩余特征
+            X_i = X_voxel[:, ifeature]
+            X_rest = np.delete(X_voxel, ifeature, axis=1)
+
+            # 计算残差
+            beta_i = np.linalg.lstsq(X_rest, X_i, rcond=None)[0]
+            beta_y = np.linalg.lstsq(X_rest, y_voxel, rcond=None)[0]
+
+            res_i = X_i - X_rest @ beta_i
+            res_y = y_voxel - X_rest @ beta_y
+
+            # 计算偏相关系数
+            r = np.corrcoef(res_i, res_y)[0,1]
+            partial_correlations[ifeature] = r
+
+    return partial_correlations
+
+
+
 def compute_voxel_correlation(idx, voxel):
-    global X, y, retinoR2
+    global X, y, i, j
     
     # load receptive field
     if not voxel in guassparams.keys():
@@ -35,8 +101,8 @@ def compute_voxel_correlation(idx, voxel):
                 
     return simple_cor
 
-subs = ['sub-02','sub-06', 'sub-07'] #'sub-01', 
-# subs = [ 'sub-05', 'sub-08'] # 'sub-03', 'sub-04', 
+# subs = ['sub-02','sub-06', 'sub-07'] # 'sub-03', 'sub-04',  'sub-01', 'sub-05', 'sub-08', 'sub-02','sub-06', 'sub-07']
+subs = [ 'sub-03', 'sub-04']# 
 sub = subs[-1]
 sleep_time = 5200*(subs.index(sub)+1)
 check_file = f'/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/build/gaussianparams/{sub}_layer-googlenet-conv2_Gauss.npy'
@@ -133,12 +199,19 @@ for sub in subs:
         # all_performace[:, voxel_indices] = np.array(simple_cor).transpose()
         # np.save(os.path.join(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_corr.npy'), all_performace)     
         
-        # concurrent computing 
+        # concurrent computing
+        
         voxels = voxel_indices.tolist()
         idxs = np.arange(num_voxel).tolist()
+        # simple corr
         results = Parallel(n_jobs=25)(delayed(compute_voxel_correlation)(idx, voxel) for idx, voxel in zip(idxs, voxels))
         all_performace = np.nan*np.zeros((X.shape[1], len(retinoR2)))
         all_performace[:, voxel_indices] = np.array(results).transpose()
         np.save(os.path.join(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_corr.npy'), all_performace)
-        
+        # partial corr
+        results = Parallel(n_jobs=30)(delayed(compute_partial_correlation)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        all_performace = np.nan*np.zeros((X.shape[1], len(retinoR2)))
+        all_performace[:, voxel_indices] = np.array(results).transpose()
+        np.save(os.path.join(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_parcorr.npy'), all_performace)
+
     print(f'{sub} consume : {t.interval} s')
