@@ -29,6 +29,111 @@ def save_result(result, indexname):
         all_performace[:, voxel_indices] = np.array(result)
     np.save(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_{indexname}.npy'), all_performace)
 
+def compute_fullmodel_expvar(idx, voxel):
+    global X, X_test, y, y_test, i, j, labels
+    # category info
+    n_category = len(labels.keys())
+    # initialize the outputs
+    full_r2_test, full_r2_train = np.nan, np.nan
+    # load receptive field
+    if not voxel in guassparams.keys():
+        pass
+    else:
+        print(f'{idx} == {voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
+        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+        # 特征标准化, 均值都已经减掉了
+        X_voxel = zscore(X_voxel)
+        X_voxel_test = zscore(X_voxel_test)
+        # 取出当前体素的训练集和测试集神经活动
+        y_voxel = y[:, idx]
+        y_voxel_test = y_test[:, idx]
+        # full model betas, no need for inception 'cause the mean is substracted 
+        beta_all = np.linalg.lstsq(X_voxel, y_voxel, rcond=None)[0]
+        # # calc the full model performance on train set
+        full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
+        # calc the full model performance on test set
+        full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
+    return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train}
+
+def compute_feature_unique_var(idx, voxel):
+    global X, X_test, y, y_test, i, j
+    # feature info
+    n_features = X.shape[1]
+    # initialize the outputs
+    # unique indices
+    unique_vars = np.nan * np.zeros(n_features)
+    r_diff = np.nan * np.zeros(n_features)
+    unique_vars_train = np.nan * np.zeros(n_features)
+    r_diff_train = np.nan * np.zeros(n_features)
+    # simple indices
+    feature_vars = np.nan * np.zeros(n_features)
+    feature_r = np.nan * np.zeros(n_features)
+    feature_vars_train = np.nan * np.zeros(n_features)
+    feature_r_train = np.nan * np.zeros(n_features)
+    # load receptive field
+    if not voxel in guassparams.keys():
+        pass
+    else:
+        print(f'{idx} == {voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
+        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+        # 特征标准化, 均值都已经减掉了
+        X_voxel = zscore(X_voxel)
+        X_voxel_test = zscore(X_voxel_test)
+        # 取出当前体素的训练集和测试集神经活动
+        y_voxel = y[:, idx]
+        y_voxel_test = y_test[:, idx]
+        # full model betas, no need for inception 'cause the mean is substracted 
+        beta_all = np.linalg.lstsq(X_voxel, y_voxel, rcond=None)[0]
+        # # calc the full model performance on train set
+        full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
+        # calc the full model performance on test set
+        full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
+        for ifeature in range(n_features):
+            # 取出当前大类的相关特征
+            X_ft = X_voxel[:, np.array([ifeature])]
+            # 取出除了当前大类其他所有特征
+            X_others = np.delete(X_voxel, ifeature, axis=1)
+            # 拟合方程参数
+            beta_ft = np.linalg.lstsq(X_ft, y_voxel, rcond=None)[0]
+            beta_others = np.linalg.lstsq(X_others, y_voxel, rcond=None)[0]
+            
+            # 计算当前大类模型预测能力
+            # 在训练集上
+            ft_r2_train, ft_r_train = calc_explained_var_and_corr(X_ft, beta_ft, y_voxel)
+            # 在测试集上
+            ft_r2_test, ft_r_test = calc_explained_var_and_corr(X_voxel_test[:, np.array([ifeature])], beta_ft, y_voxel_test)
+
+            feature_vars[ifeature],  feature_r[ifeature] = ft_r2_test, ft_r_test
+            feature_vars_train[ifeature],  feature_r_train[ifeature] = ft_r2_train, ft_r_train
+
+            # 计算其余大类模型预测能力
+            # 在训练集上
+            other_r2_train, other_r_train = calc_explained_var_and_corr(X_others, beta_others, y_voxel)
+            # 在测试集上
+            other_r2_test, other_r_test = calc_explained_var_and_corr(np.delete(X_voxel_test, ifeature, axis=1), beta_others, y_voxel_test)
+            
+            # 计算独立解释方差和相关差异
+            # 在训练集上
+            unique_vars_train[ifeature] = full_r2_train - other_r2_train
+            r_diff_train[ifeature] = full_r_train - other_r_train
+            # 在测试集上
+            unique_vars[ifeature] = full_r2_test - other_r2_test
+            r_diff[ifeature] = full_r_test - other_r_test
+
+    return {'ft-uv':unique_vars, 'ft-rd':r_diff, 'model-ft-ev':feature_vars, 'model-ft-r':feature_r, 
+            'ft-uv-train':unique_vars_train, 'ft-rd-train':r_diff_train, 
+            'model-ft-ev-train':feature_vars_train, 'model-ft-r-train':feature_r_train}     
+
 def compute_category_unique_var(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
     # category info
@@ -68,42 +173,40 @@ def compute_category_unique_var(idx, voxel):
         full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
         # calc the full model performance on test set
         full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
-    return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train}
-    #     for ilabel, (key, value) in enumerate(labels.items()):
-    #         # 取出当前大类的相关特征
-    #         X_cate = X_voxel[:, np.array(value)]
-    #         # 取出除了当前大类其他所有特征
-    #         X_others = np.delete(X_voxel, value, axis=1)
-    #         # 拟合方程参数
-    #         beta_cate = np.linalg.lstsq(X_cate, y_voxel, rcond=None)[0]
-    #         beta_others = np.linalg.lstsq(X_others, y_voxel, rcond=None)[0]
+        for ilabel, (key, value) in enumerate(labels.items()):
+            # 取出当前大类的相关特征
+            X_cate = X_voxel[:, np.array(value)]
+            # 取出除了当前大类其他所有特征
+            X_others = np.delete(X_voxel, value, axis=1)
+            # 拟合方程参数
+            beta_cate = np.linalg.lstsq(X_cate, y_voxel, rcond=None)[0]
+            beta_others = np.linalg.lstsq(X_others, y_voxel, rcond=None)[0]
             
-    #         # 计算当前大类模型预测能力
-    #         # 在训练集上
-    #         cate_r2_train, cate_r_train = calc_explained_var_and_corr(X_cate, beta_cate, y_voxel)
-    #         # 在测试集上
-    #         cate_r2_test, cate_r_test = calc_explained_var_and_corr(X_voxel_test[:, np.array(value)], beta_cate, y_voxel_test)
+            # 计算当前大类模型预测能力
+            # 在训练集上
+            cate_r2_train, cate_r_train = calc_explained_var_and_corr(X_cate, beta_cate, y_voxel)
+            # 在测试集上
+            cate_r2_test, cate_r_test = calc_explained_var_and_corr(X_voxel_test[:, np.array(value)], beta_cate, y_voxel_test)
 
-    #         category_vars[ilabel],  category_r[ilabel] = cate_r2_test, cate_r_test
-    #         category_vars_train[ilabel],  category_r_train[ilabel] = cate_r2_train, cate_r_train
+            category_vars[ilabel],  category_r[ilabel] = cate_r2_test, cate_r_test
+            category_vars_train[ilabel],  category_r_train[ilabel] = cate_r2_train, cate_r_train
 
-    #         # 计算其余大类模型预测能力
-    #         # 在训练集上
-    #         other_r2_train, other_r_train = calc_explained_var_and_corr(X_others, beta_others, y_voxel)
-    #         # 在测试集上
-    #         other_r2_test, other_r_test = calc_explained_var_and_corr(np.delete(X_voxel_test, value, axis=1), beta_others, y_voxel_test)
+            # 计算其余大类模型预测能力
+            # 在训练集上
+            other_r2_train, other_r_train = calc_explained_var_and_corr(X_others, beta_others, y_voxel)
+            # 在测试集上
+            other_r2_test, other_r_test = calc_explained_var_and_corr(np.delete(X_voxel_test, value, axis=1), beta_others, y_voxel_test)
             
-    #         # 计算独立解释方差和相关差异
-    #         # 在训练集上
-    #         unique_vars_train[ilabel] = full_r2_train - other_r2_train
-    #         r_diff_train[ilabel] = full_r_train - other_r_train
-    #         # 在测试集上
-    #         unique_vars[ilabel] = full_r2_test - other_r2_test
-    #         r_diff[ilabel] = full_r_test - other_r_test
-                        
-    # return {'uv':unique_vars, 'rd':r_diff, 'model-ctg-ev':category_vars, 'model-ctg-r':category_r, 
-    #         'uv-train':unique_vars_train, 'rd-train':r_diff_train, 
-    #         'model-ctg-ev-train':category_vars_train, 'model-ctg-r-train':category_r_train, 'full-model-ev': full_r2_test}
+            # 计算独立解释方差和相关差异
+            # 在训练集上
+            unique_vars_train[ilabel] = full_r2_train - other_r2_train
+            r_diff_train[ilabel] = full_r_train - other_r_train
+            # 在测试集上
+            unique_vars[ilabel] = full_r2_test - other_r2_test
+            r_diff[ilabel] = full_r_test - other_r_test           
+    return {'uv':unique_vars, 'rd':r_diff, 'model-ctg-ev':category_vars, 'model-ctg-r':category_r, 
+            'uv-train':unique_vars_train, 'rd-train':r_diff_train, 
+            'model-ctg-ev-train':category_vars_train, 'model-ctg-r-train':category_r_train, 'full-model-ev': full_r2_test}
 
 def compute_partial_correlation_withincate(idx, voxel):
 
@@ -184,8 +287,6 @@ def compute_partial_correlation(idx, voxel):
             partial_correlations[ifeature] = r
 
     return partial_correlations
-
-
 
 def compute_voxel_correlation(idx, voxel):
     global X, y, i, j
@@ -351,17 +452,24 @@ for sub in subs:
         # all_performace[:, voxel_indices] = np.array(results).transpose()
         # np.save(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_parcorrincate.npy'), all_performace)
 
-        # unique var of feature category
-        results = Parallel(n_jobs=50)(delayed(compute_category_unique_var)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        # extract the indices and save out
+        # # unique var of feature category
+        # results = Parallel(n_jobs=20)(delayed(compute_category_unique_var)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # # extract the indices and save out
         # for indexname in ['uv', 'rd', 'model-ctg-ev', 'model-ctg-r',
-        #                   'uv-train', 'rd-train', 'model-ctg-ev-train', 'model-ctg-r-train', 'full-model-ev']:
+        #                   'uv-train', 'rd-train', 'model-ctg-ev-train', 'model-ctg-r-train']:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
 
-        for indexname in ['full-model-ev', 'full-model-ev-train']:
+        results = Parallel(n_jobs=20)(delayed(compute_feature_unique_var)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['ft-uv', 'ft-rd', 'model-ft-ev', 'model-ft-r',
+                          'ft-uv-train', 'ft-rd-train', 'model-ft-ev-train', 'model-ft-r-train']:
             index = np.array([ _[indexname] for _ in results])
             save_result(index, indexname)
+
+        # for indexname in ['full-model-ev', 'full-model-ev-train']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
+            
         # unique_var_on_coco = np.array([ _['uv'] for _ in results])
         # r_diff_on_coco = np.array([ _['rd'] for _ in results])
         # cate_ev_on_coco = np.array([ _['model-ctg-ev'] for _ in results])
