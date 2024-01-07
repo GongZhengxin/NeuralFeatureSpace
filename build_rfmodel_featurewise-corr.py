@@ -60,6 +60,74 @@ def compute_fullmodel_expvar(idx, voxel):
         full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
     return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train}
 
+def compute_feature_unique_var_insetmodel(idx, voxel):
+    global X, X_test, y, y_test, i, j, labels, set_r2s_train, set_r2s_test, set_rs_train, set_rs_test
+    # feature info
+    n_features = X.shape[1]
+    # initialize the outputs
+    # unique indices
+    unique_vars = np.nan * np.zeros(n_features)
+    r_diff = np.nan * np.zeros(n_features)
+    unique_vars_train = np.nan * np.zeros(n_features)
+    r_diff_train = np.nan * np.zeros(n_features)
+
+    # load receptive field
+    if not voxel in guassparams.keys():
+        pass
+    else:
+        print(f'{idx} == {voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
+        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+        # 特征标准化, 均值都已经减掉了
+        X_voxel = zscore(X_voxel)
+        X_voxel_test = zscore(X_voxel_test)
+        # 取出当前体素的训练集和测试集神经活动
+        y_voxel = y[:, idx]
+        y_voxel_test = y_test[:, idx]
+
+        # # calc the full model performance on train set
+        voxel_set_r2s_train, voxel_set_rs_train = set_r2s_train[:, voxel], set_r2s_test[:, voxel]
+        # calc the full model performance on test set
+        voxel_set_r2s_test, voxel_set_rs_test = set_rs_train[:, voxel], set_rs_test[:, voxel]
+        for ilabel, (key, value) in enumerate(labels.items()):
+            set_r2_train, set_r_train = voxel_set_r2s_train[ilabel], voxel_set_rs_train[ilabel]
+            set_r2_test, set_r_test = voxel_set_r2s_test[ilabel], voxel_set_rs_test[ilabel]
+            if len(value) >1 :
+                X_set = X_voxel[:, np.array(value)]
+                X_set_test = X_voxel_test[:, np.array(value)]
+                for ivalue, featureidx in enumerate(value):
+                    # 取出除了当前大类其他所有特征
+                    X_others = np.delete(X_set, ivalue, axis=1)
+                    # 拟合方程参数
+                    beta_others = np.linalg.lstsq(X_others, y_voxel, rcond=None)[0]
+                    
+                    # 计算其余大类模型预测能力
+                    # 在训练集上
+                    other_r2_train, other_r_train = calc_explained_var_and_corr(X_others, beta_others, y_voxel)
+                    # 在测试集上
+                    other_r2_test, other_r_test = calc_explained_var_and_corr(np.delete(X_set_test, ivalue, axis=1), beta_others, y_voxel_test)
+                    
+                    # 计算独立解释方差和相关差异
+                    # 在训练集上
+                    unique_vars_train[featureidx] = set_r2_train- other_r2_train
+                    r_diff_train[featureidx] = set_r_train - other_r_train
+                    # 在测试集上
+                    unique_vars[featureidx] = set_r2_test - other_r2_test
+                    r_diff[featureidx] = set_r_test - other_r_test
+            else:
+                # 在训练集上
+                unique_vars_train[featureidx] = set_r2_train
+                r_diff_train[featureidx] = set_r_train
+                # 在测试集上
+                unique_vars[featureidx] = set_r2_test
+                r_diff[featureidx] = set_r_test
+    
+    return {'uv-winthin':unique_vars, 'rd-winthin':r_diff, 'uv-train-winthin':unique_vars_train, 'rd-train-winthin':r_diff_train}
+
 def compute_feature_unique_var(idx, voxel):
     global X, X_test, y, y_test, i, j
     # feature info
@@ -132,7 +200,7 @@ def compute_feature_unique_var(idx, voxel):
 
     return {'ft-uv':unique_vars, 'ft-rd':r_diff, 'model-ft-ev':feature_vars, 'model-ft-r':feature_r, 
             'ft-uv-train':unique_vars_train, 'ft-rd-train':r_diff_train, 
-            'model-ft-ev-train':feature_vars_train, 'model-ft-r-train':feature_r_train}     
+            'model-ft-ev-train':feature_vars_train, 'model-ft-r-train':feature_r_train}
 
 def compute_category_unique_var(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
@@ -410,6 +478,10 @@ for sub in subs:
         #     cur_shuffle = isess*1000 + np.array(shuffle_indices)
         #     X[isess*1000 : (isess+1)*1000] = X[cur_shuffle]
         
+        set_r2s_train = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-ev-train.npy'))
+        set_rs_train = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-r-train.npy'))
+        set_r2s_test = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-ev.npy'))
+        set_rs_test = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-r.npy'))
 
         # # loop for voxels
         # simple_cor = np.zeros((len(voxel_indices), X.shape[1]))
@@ -460,11 +532,17 @@ for sub in subs:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
 
-        results = Parallel(n_jobs=20)(delayed(compute_feature_unique_var)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        for indexname in ['ft-uv', 'ft-rd', 'model-ft-ev', 'model-ft-r',
-                          'ft-uv-train', 'ft-rd-train', 'model-ft-ev-train', 'model-ft-r-train']:
+        results = Parallel(n_jobs=20)(delayed(compute_feature_unique_var_insetmodel)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['uv-winthin', 'rd-winthin', 'uv-train-winthin', 'rd-train-winthin']:
             index = np.array([ _[indexname] for _ in results])
             save_result(index, indexname)
+
+        # # 
+        # results = Parallel(n_jobs=20)(delayed(compute_feature_unique_var)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # for indexname in ['ft-uv', 'ft-rd', 'model-ft-ev', 'model-ft-r',
+        #                   'ft-uv-train', 'ft-rd-train', 'model-ft-ev-train', 'model-ft-r-train']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
 
         # for indexname in ['full-model-ev', 'full-model-ev-train']:
         #     index = np.array([ _[indexname] for _ in results])
