@@ -20,6 +20,12 @@ def gaussian_2d(coords, A, x_0, y_0, sigma_x, sigma_y,C):
 def calc_explained_var_and_corr(x, beta, y):
     return  1 - np.mean((x @ beta - y)**2) / np.var(y), np.corrcoef(x @ beta, y)[0, 1]
 
+def adjust_RF(receptive_field):
+    receptive_field[receptive_field < np.mean(receptive_field)] = 0
+    receptive_field = receptive_field + np.abs(np.min(receptive_field, None))
+    receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+    return receptive_field
+
 def save_result(result, indexname):
     global performance_path, voxel_indices, sub, mask_name, layername
     if result.ndim > 1:
@@ -41,8 +47,7 @@ def compute_fullmodel_stats(idx, voxel):
     else:
         print(f'{idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
@@ -69,23 +74,33 @@ def compute_fullmodel_expvar_debug(idx, voxel):
     else:
         print(f'{idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
-        X_voxel_test = zscore(X_voxel_test)
+        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
         # 取出当前体素的训练集和测试集神经活动
         y_voxel = y[:, idx]
         y_voxel_test = y_test[:, idx]
-        # full model betas, no need for inception 'cause the mean is substracted 
-        beta_all = np.linalg.lstsq(X_voxel, y_voxel, rcond=None)[0]
-        # # calc the full model performance on train set
-        full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
-        # calc the full model performance on test set
-        full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
+        
+        lr = LinearRegression()
+        lr.fit(X_voxel, y_voxel)
+        full_r2_train = lr.score(X_voxel, y_voxel)
+        full_r2_test = lr.score(X_voxel_test, y_voxel_test)
+        full_r_train = np.corrcoef(lr.predict(X_voxel), y_voxel)[0,1]
+        full_r_test = np.corrcoef(lr.predict(X_voxel_test), y_voxel_test)[0,1]
+
+        # ============== 可能存在bug的区域 =================
+        # # full model betas, no need for inception 'cause the mean is substracted 
+        # beta_all = np.linalg.lstsq(X_voxel, y_voxel, rcond=None)[0]
+        # # # calc the full model performance on train set
+        # full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
+        # # calc the full model performance on test set
+        # full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
+        # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
     return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
             'full-model-r': full_r_test, 'full-model-r-train': full_r_train}
 
@@ -100,8 +115,7 @@ def compute_fullmodel_expvar(idx, voxel):
     else:
         print(f'{idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
@@ -137,8 +151,7 @@ def compute_feature_unique_var_insetmodel(idx, voxel):
     else:
         print(f'{idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
@@ -209,8 +222,7 @@ def compute_feature_unique_var(idx, voxel):
     else:
         print(f'{idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
@@ -284,8 +296,7 @@ def compute_category_unique_var(idx, voxel):
     else:
         print(f'{idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
@@ -348,8 +359,7 @@ def compute_partial_correlation_withincate(idx, voxel):
     else:
         print(f'{idx}={voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         y_voxel = y[:, idx]
@@ -388,13 +398,9 @@ def compute_partial_correlation(idx, voxel):
         pass
     else:
         print(f'{idx}={voxel}') 
-        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
         # load receptive field
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         y_voxel = y[:, idx]
@@ -424,14 +430,10 @@ def compute_voxel_correlation(idx, voxel):
         pass
         simple_cor = np.nan*np.zeros((X.shape[1],))
     else:
-        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
         print(f'{idx}={voxel}')
         # load receptive field
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         # assign to corr matrix
@@ -477,7 +479,7 @@ for sub in subs:
         retino_path = pjoin(work_dir, 'build/retinoparams')
         guass_path = pjoin(work_dir, 'build/gaussianparams')
         # save out path
-        performance_path = pjoin(work_dir, 'build/featurewise-corr/debug')
+        performance_path = pjoin(work_dir, 'build/featurewise-corr')
         # save path
         if not os.path.exists(pjoin(performance_path, sub)):
             os.makedirs(pjoin(performance_path, sub))
@@ -494,7 +496,7 @@ for sub in subs:
         num_trial = test_resp.shape[0]
         num_run = int(num_trial/120)
         test_resp = test_resp.reshape((num_run, 120, 59412))
-        mean_test_resp = test_resp.mean(axis=0)
+        
         
         # load mask
         voxel_mask_nii = nib.load(pjoin(voxel_mask_path, f'nod-voxmask_{mask_name}.dlabel.nii'))
@@ -512,12 +514,12 @@ for sub in subs:
         gc.collect()
         # collect resp in ROI
         brain_resp = brain_resp[:, voxel_indices]
-        mean_test_resp = mean_test_resp[:, voxel_indices]
+        test_resp = test_resp[:, :, voxel_indices]
 
         # normalization
         norm_metric = 'session'
         brain_resp = train_data_normalization(brain_resp, metric=norm_metric)
-        mean_test_resp = zscore(mean_test_resp)
+        mean_test_resp = zscore(test_resp.mean(axis=0))
         num_voxel = brain_resp.shape[-1]
 
         # coordinate
@@ -538,10 +540,10 @@ for sub in subs:
         #     cur_shuffle = isess*1000 + np.array(shuffle_indices)
         #     X[isess*1000 : (isess+1)*1000] = X[cur_shuffle]
         
-        set_r2s_train = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-ev-train.npy'))
-        set_rs_train = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-r-train.npy'))
-        set_r2s_test = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-ev.npy'))
-        set_rs_test = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-r.npy'))
+        # set_r2s_train = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-ev-train.npy'))
+        # set_rs_train = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-r-train.npy'))
+        # set_r2s_test = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-ev.npy'))
+        # set_rs_test = np.load(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_model-ctg-r.npy'))
 
         # # loop for voxels
         # simple_cor = np.zeros((len(voxel_indices), X.shape[1]))
@@ -551,8 +553,7 @@ for sub in subs:
         #         print(f'corr-({idx},{voxel})')
         #         # load receptive field
         #         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        #         # receptive_field[receptive_field < 0.5*np.max(receptive_field)] = 0
-        #         receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
+        #         receptive_field = adjust_RF(receptive_field)
         #         # saptial summation
         #         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         #         # assign to corr matrix
@@ -605,10 +606,10 @@ for sub in subs:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
 
-        # results = Parallel(n_jobs=45)(delayed(compute_fullmodel_expvar)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        # for indexname in ['full-model-r', 'full-model-r-train']:
-        #     index = np.array([ _[indexname] for _ in results])
-        #     save_result(index, indexname)
+        results = Parallel(n_jobs=15)(delayed(compute_fullmodel_expvar_debug)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train']:
+            index = np.array([ _[indexname] for _ in results])
+            save_result(index, indexname)
             
         # unique_var_on_coco = np.array([ _['uv'] for _ in results])
         # r_diff_on_coco = np.array([ _['rd'] for _ in results])
@@ -620,9 +621,9 @@ for sub in subs:
         # cate_ev_on_im = np.array([ _['model-ctg-ev-train'] for _ in results])
         # cate_r_on_im = np.array([ _['model-ctg-r-train'] for _ in results])
             
-        results = Parallel(n_jobs=10)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p']:
-            index = np.array([ _[indexname] for _ in results])
-            save_result(index, indexname)
+        # results = Parallel(n_jobs=10)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
         
     print(f'{sub} consume : {t.interval} s')
