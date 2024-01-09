@@ -21,10 +21,19 @@ def calc_explained_var_and_corr(x, beta, y):
     return  1 - np.mean((x @ beta - y)**2) / np.var(y), np.corrcoef(x @ beta, y)[0, 1]
 
 def adjust_RF(receptive_field):
-    receptive_field[receptive_field < np.mean(receptive_field)] = 0
-    receptive_field = receptive_field + np.abs(np.min(receptive_field, None))
-    receptive_field = receptive_field / (receptive_field.sum() + 1e-20)
-    return receptive_field
+    cur_receptive_field = receptive_field.copy()
+    cur_receptive_field = cur_receptive_field + np.abs(np.min(cur_receptive_field, None)) + 1
+    thres = np.min(cur_receptive_field) + 0.5*(np.max(cur_receptive_field) - np.min(cur_receptive_field)) # 
+    # if np.mean(receptive_field < thres) < 0.1:
+    #     thres = np.mean(receptive_field)
+    cur_receptive_field[cur_receptive_field < thres] = 0
+    cur_receptive_field = cur_receptive_field / (cur_receptive_field.sum() + 1e-20)
+    # if (~np.isfinite(cur_receptive_field)).any():
+    #     print('use full gaussian')
+    #     cur_receptive_field = receptive_field + np.abs(np.min(receptive_field, None))
+    #     cur_receptive_field = cur_receptive_field / (cur_receptive_field.sum() + 1e-20)
+    return cur_receptive_field
+
 
 def save_result(result, indexname):
     global performance_path, voxel_indices, sub, mask_name, layername
@@ -35,6 +44,58 @@ def save_result(result, indexname):
         all_performace = np.nan * np.zeros((1, 59412))
         all_performace[:, voxel_indices] = np.array(result)
     np.save(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_{indexname}.npy'), all_performace)
+
+def compute_full_model_performance_with_stats(idx, voxel):
+    global X, X_test, y, y_test, i, j, labels
+    coefficients = np.nan*np.zeros(X.shape[1])
+    standard_errors = np.nan*np.zeros(X.shape[1])
+    p_values = np.nan*np.zeros(X.shape[1])
+    # initialize the outputs
+    full_r2_test, full_r2_train = np.nan, np.nan
+    full_r_test, full_r_train = np.nan, np.nan
+    # check nan
+    test_nan, train_nan = 0, 0
+    # load receptive field
+    if not voxel in guassparams.keys():
+        pass
+    else:
+        print(f'{sub} : {idx} == {voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        receptive_field = adjust_RF(receptive_field)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+        
+        # 特征标准化, 均值都已经减掉了
+        X_voxel = zscore(X_voxel)
+        X_voxel_test = zscore(X_voxel_test)# (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
+        if np.isnan(X_voxel).any():
+            train_nan = 1
+            X_voxel = np.nan_to_num(X_voxel)
+        if np.isnan(X_voxel_test).any():
+            test_nan = 1
+            X_voxel_test = np.nan_to_num(X_voxel_test)
+        # 取出当前体素的训练集和测试集神经活动
+        y_voxel = zscore(y[:, idx])
+        y_voxel_test = zscore(y_test[:, idx])
+        
+        lr = LinearRegression()
+        lr.fit(X_voxel, y_voxel)
+        full_r2_train = lr.score(X_voxel, y_voxel)
+        full_r2_test = lr.score(X_voxel_test, y_voxel_test)
+        full_r_train = np.corrcoef(lr.predict(X_voxel), y_voxel)[0,1]
+        full_r_test = np.corrcoef(lr.predict(X_voxel_test), y_voxel_test)[0,1]
+        model = sm.OLS(y_voxel, X_voxel)
+        model_summary = model.fit()
+        # 提取所需的统计量：回归系数、标准误差、p 值
+        coefficients = model_summary.params
+        standard_errors = model_summary.bse
+        p_values = model_summary.pvalues
+    return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
+            'fullm-p': p_values, 
+            'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
+            'full-model-r': full_r_test, 'full-model-r-train': full_r_train, 
+            'testnan' : test_nan, 'trainnan' : train_nan}
 
 def compute_fullmodel_stats(idx, voxel):
     global X, y, i, j, labels
@@ -52,8 +113,10 @@ def compute_fullmodel_stats(idx, voxel):
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
+        if np.isnan(X_voxel).any():
+            X_voxel = np.nan_to_num(X_voxel)
         # 取出当前体素的训练集和测试集神经活动
-        y_voxel = y[:, idx]
+        y_voxel = zscore(y[:, idx])
         model = sm.OLS(y_voxel, X_voxel)
         model_summary = model.fit()
         # 提取所需的统计量：回归系数、标准误差、p 值
@@ -68,22 +131,31 @@ def compute_fullmodel_expvar_debug(idx, voxel):
     # initialize the outputs
     full_r2_test, full_r2_train = np.nan, np.nan
     full_r_test, full_r_train = np.nan, np.nan
+    # check nan
+    test_nan, train_nan = 0, 0
     # load receptive field
     if not voxel in guassparams.keys():
         pass
     else:
-        print(f'{idx} == {voxel}')
+        print(f'{sub} : {idx} == {voxel}')
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
         receptive_field = adjust_RF(receptive_field)
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+        
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
-        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
+        X_voxel_test = zscore(X_voxel_test)# (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
+        if np.isnan(X_voxel).any():
+            train_nan = 1
+            X_voxel = np.nan_to_num(X_voxel)
+        if np.isnan(X_voxel_test).any():
+            test_nan = 1
+            X_voxel_test = np.nan_to_num(X_voxel_test)
         # 取出当前体素的训练集和测试集神经活动
-        y_voxel = y[:, idx]
-        y_voxel_test = y_test[:, idx]
+        y_voxel = zscore(y[:, idx])
+        y_voxel_test = zscore(y_test[:, idx])
         
         lr = LinearRegression()
         lr.fit(X_voxel, y_voxel)
@@ -92,17 +164,18 @@ def compute_fullmodel_expvar_debug(idx, voxel):
         full_r_train = np.corrcoef(lr.predict(X_voxel), y_voxel)[0,1]
         full_r_test = np.corrcoef(lr.predict(X_voxel_test), y_voxel_test)[0,1]
 
-        # ============== 可能存在bug的区域 =================
+        # # ============== 可能存在bug的区域 =================
         # # full model betas, no need for inception 'cause the mean is substracted 
-        # beta_all = np.linalg.lstsq(X_voxel, y_voxel, rcond=None)[0]
-        # # # calc the full model performance on train set
-        # full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
+        # beta_all = np.linalg.lstsq(X_voxel, y_voxel-y_voxel.mean(), rcond=None)[0]
+        # # calc the full model performance on train set
+        # full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel-y_voxel.mean())
         # # calc the full model performance on test set
-        # full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
-        # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        # full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test-y_voxel.mean())
+        # # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
-            'full-model-r': full_r_test, 'full-model-r-train': full_r_train}
+            'full-model-r': full_r_test, 'full-model-r-train': full_r_train, 
+            'testnan' : test_nan, 'trainnan' : train_nan}
 
 def compute_fullmodel_expvar(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
@@ -121,7 +194,7 @@ def compute_fullmodel_expvar(idx, voxel):
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
-        X_voxel_test = zscore(X_voxel_test)
+        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
         # 取出当前体素的训练集和测试集神经活动
         y_voxel = y[:, idx]
         y_voxel_test = y_test[:, idx]
@@ -157,7 +230,7 @@ def compute_feature_unique_var_insetmodel(idx, voxel):
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
-        X_voxel_test = zscore(X_voxel_test)
+        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
         # 取出当前体素的训练集和测试集神经活动
         y_voxel = y[:, idx]
         y_voxel_test = y_test[:, idx]
@@ -228,7 +301,7 @@ def compute_feature_unique_var(idx, voxel):
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
-        X_voxel_test = zscore(X_voxel_test)
+        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
         # 取出当前体素的训练集和测试集神经活动
         y_voxel = y[:, idx]
         y_voxel_test = y_test[:, idx]
@@ -302,7 +375,7 @@ def compute_category_unique_var(idx, voxel):
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
-        X_voxel_test = zscore(X_voxel_test)
+        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
         # 取出当前体素的训练集和测试集神经活动
         y_voxel = y[:, idx]
         y_voxel_test = y_test[:, idx]
@@ -444,7 +517,7 @@ def compute_voxel_correlation(idx, voxel):
 # subs = ['sub-03'] # ,, 'sub-05' 'sub-04', 'sub-02','sub-06', 'sub-07''sub-04', 'sub-08', 'sub-02','sub-06', 'sub-07','sub-09'
 # subs = [ 'sub-03']#
 subs = [f'sub-0{isub+1}' for isub in range(9)] 
-sub = subs[-1]
+sub = subs[0]
 sleep_time = 5200*(subs.index(sub)+1)
 check_file = f'/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/build/gaussianparams/{sub}_layer-googlenet-conv2_Gauss.npy'
 print(f'wait {sub}; sleeping for {sleep_time} seconds')
@@ -496,7 +569,7 @@ for sub in subs:
         num_trial = test_resp.shape[0]
         num_run = int(num_trial/120)
         test_resp = test_resp.reshape((num_run, 120, 59412))
-        
+        mean_test_resp = test_resp.mean(axis=0)
         
         # load mask
         voxel_mask_nii = nib.load(pjoin(voxel_mask_path, f'nod-voxmask_{mask_name}.dlabel.nii'))
@@ -510,17 +583,21 @@ for sub in subs:
         # transfer mask into indices
         voxel_indices = np.where(voxel_mask==1)[0]
 
-        del test_resp, voxel_mask_nii, voxel_mask
-        gc.collect()
         # collect resp in ROI
         brain_resp = brain_resp[:, voxel_indices]
-        test_resp = test_resp[:, :, voxel_indices]
+        # test_resp = test_resp[:, :, voxel_indices]
+        mean_test_resp = mean_test_resp[:, voxel_indices]
+
 
         # normalization
         norm_metric = 'session'
         brain_resp = train_data_normalization(brain_resp, metric=norm_metric)
-        mean_test_resp = zscore(test_resp.mean(axis=0))
+        # mean_test_resp = zscore(test_resp.mean(axis=0))
+        mean_test_resp = zscore(mean_test_resp, None)
         num_voxel = brain_resp.shape[-1]
+
+        del test_resp, voxel_mask_nii, voxel_mask
+        gc.collect()
 
         # coordinate
         # Create grid data
@@ -606,11 +683,19 @@ for sub in subs:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
 
-        results = Parallel(n_jobs=15)(delayed(compute_fullmodel_expvar_debug)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        for indexname in ['full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train']:
-            index = np.array([ _[indexname] for _ in results])
-            save_result(index, indexname)
-            
+        # results = Parallel(n_jobs=25)(delayed(compute_fullmodel_expvar_debug)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # for indexname in ['full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
+        # for indexname in ['testnan', 'trainnan']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     print(indexname, np.sum(index))
+        #     save_result(index, indexname)
+
+        # for idx, voxel in zip(idxs[480:520], voxels[480:520]):
+        #     print(idx, '  ', voxel)
+        #     res = compute_fullmodel_expvar_debug(idx, voxel)
+        
         # unique_var_on_coco = np.array([ _['uv'] for _ in results])
         # r_diff_on_coco = np.array([ _['rd'] for _ in results])
         # cate_ev_on_coco = np.array([ _['model-ctg-ev'] for _ in results])
@@ -625,5 +710,10 @@ for sub in subs:
         # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p']:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
-        
+        results = Parallel(n_jobs=25)(delayed(compute_full_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
+                          'fullm-coef', 'fullm-bse', 'fullm-p', 'testnan', 'trainnan']:
+            index = np.array([ _[indexname] for _ in results])
+            save_result(index, indexname)
+
     print(f'{sub} consume : {t.interval} s')

@@ -81,10 +81,10 @@ for sub in subs:
         test_resp = test_resp.reshape((num_run, 120, 59412))
         mean_test_resp = test_resp.mean(axis=0)
 
+        # load mask
         voxel_mask_nii = nib.load(os.path.join(voxel_mask_path, f'nod-voxmask_{mask_name}.dlabel.nii'))
         voxel_mask = voxel_mask_nii.get_fdata()
         named_maps = [named_map.map_name for named_map in voxel_mask_nii.header.get_index_map(0).named_maps]
-        
         # determine the mask type
         if sub in named_maps:
             voxel_mask = voxel_mask[named_maps.index(sub),:]
@@ -95,11 +95,14 @@ for sub in subs:
 
         # collect resp in ROI
         brain_resp = brain_resp[:, voxel_indices]
+        # test_resp = test_resp[:, :, voxel_indices]
         mean_test_resp = mean_test_resp[:, voxel_indices]
+
 
         # normalization
         norm_metric = 'session'
         brain_resp = train_data_normalization(brain_resp, metric=norm_metric)
+        # mean_test_resp = zscore(test_resp.mean(axis=0))
         mean_test_resp = zscore(mean_test_resp)
         num_voxel = brain_resp.shape[-1]
 
@@ -131,67 +134,68 @@ for sub in subs:
         full_r2_test =calc_explained_var(full_model.predict(X_test_mean), y_test)
         full_r_test = calc_corr(full_model.predict(X_test_mean), y_test)
 
-        n_category = len(labels.keys())
-        unique_vars_train, r_diff_train = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
-        unique_vars, r_diff = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
-        set_vars, set_r = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
-        set_vars_train, set_cor_train = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
+        # n_category = len(labels.keys())
+        # unique_vars_train, r_diff_train = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
+        # unique_vars, r_diff = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
+        # set_vars, set_r = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
+        # set_vars_train, set_cor_train = np.nan * np.zeros((n_category, num_voxel)), np.nan * np.zeros((n_category, num_voxel))
         
-        for ilabel, (key, value) in enumerate(labels.items()):
-            print(key)
-            # 取出当前大类的相关特征
-            X_cate = X_mean[:, np.array(value)]
-            X_test_cate = X_test_mean[:, np.array(value)]
-            # 取出除了当前大类其他所有特征
-            X_others = np.delete(X_mean, value, axis=1)
-            X_test_others = np.delete(X_test_mean, value, axis=1)
-            # 拟合方程参数
-            other_model = LinearRegression(n_jobs=10)
-            set_model = LinearRegression(n_jobs=10)
+        # for ilabel, (key, value) in enumerate(labels.items()):
+        #     print(key)
+        #     # 取出当前大类的相关特征
+        #     X_cate = X_mean[:, np.array(value)]
+        #     X_test_cate = X_test_mean[:, np.array(value)]
+        #     # 取出除了当前大类其他所有特征
+        #     X_others = np.delete(X_mean, value, axis=1)
+        #     X_test_others = np.delete(X_test_mean, value, axis=1)
+        #     # 拟合方程参数
+        #     other_model = LinearRegression(n_jobs=10)
+        #     set_model = LinearRegression(n_jobs=10)
             
-            other_model.fit(X_others, y)
-            set_model.fit(X_cate, y)
+        #     other_model.fit(X_others, y)
+        #     set_model.fit(X_cate, y)
 
-            # 计算当前大类模型预测能力
-            # 在训练集上
-            set_r2_train = calc_explained_var(set_model.predict(X_cate), y)
-            set_r_train = calc_corr(set_model.predict(X_cate), y) 
-            # 在测试集上
-            set_r2_test = calc_explained_var(set_model.predict(X_test_cate), y_test)
-            set_r_test = calc_corr(set_model.predict(X_test_cate), y_test)
+        #     # 计算当前大类模型预测能力
+        #     # 在训练集上
+        #     set_r2_train = calc_explained_var(set_model.predict(X_cate), y)
+        #     set_r_train = calc_corr(set_model.predict(X_cate), y) 
+        #     # 在测试集上
+        #     set_r2_test = calc_explained_var(set_model.predict(X_test_cate), y_test)
+        #     set_r_test = calc_corr(set_model.predict(X_test_cate), y_test)
 
-            set_vars_train[ilabel, :] = set_r2_train
-            set_cor_train[ilabel, :] = set_r_train
-            set_vars[ilabel, :] = set_r2_test
-            set_r[ilabel, :] = set_r_test
-            # 计算其余大类模型预测能力
-            # 在训练集上
-            other_r2_train = calc_explained_var(other_model.predict(X_others), y)
-            other_r_train = calc_corr(other_model.predict(X_others), y) 
-            # 在测试集上
-            other_r2_test = calc_explained_var(other_model.predict(X_test_others), y_test)
-            other_r_test = calc_corr(other_model.predict(X_test_others), y_test) 
+        #     set_vars_train[ilabel, :] = set_r2_train
+        #     set_cor_train[ilabel, :] = set_r_train
+        #     set_vars[ilabel, :] = set_r2_test
+        #     set_r[ilabel, :] = set_r_test
+        #     # 计算其余大类模型预测能力
+        #     # 在训练集上
+        #     other_r2_train = calc_explained_var(other_model.predict(X_others), y)
+        #     other_r_train = calc_corr(other_model.predict(X_others), y) 
+        #     # 在测试集上
+        #     other_r2_test = calc_explained_var(other_model.predict(X_test_others), y_test)
+        #     other_r_test = calc_corr(other_model.predict(X_test_others), y_test) 
             
-            # 计算独立解释方差和相关差异
-            # 在训练集上
-            unique_vars_train[ilabel, :] = full_r2_train - other_r2_train
-            r_diff_train[ilabel, :] = full_r_train - other_r_train
-            # 在测试集上
-            unique_vars[ilabel, :] = full_r2_test - other_r2_test
-            r_diff[ilabel, :] = full_r_test - other_r_test
+        #     # 计算独立解释方差和相关差异
+        #     # 在训练集上
+        #     unique_vars_train[ilabel, :] = full_r2_train - other_r2_train
+        #     r_diff_train[ilabel, :] = full_r_train - other_r_train
+        #     # 在测试集上
+        #     unique_vars[ilabel, :] = full_r2_test - other_r2_test
+        #     r_diff[ilabel, :] = full_r_test - other_r_test
         # computing 
         # all_performace = np.nan*np.zeros((X_mean.shape[-1], 59412))
         # all_performace[:, voxel_indices] = np.corrcoef(y.transpose(), X_mean.transpose())[-X_mean.shape[-1]::, 0:len(voxel_indices)]
         # np.save(os.path.join(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_corr.npy'), all_performace)
-        results = {'uv':unique_vars, 'rd': r_diff, 
-                   'model-ctg-ev': set_vars, 'model-ctg-r': set_r, 
-                   'uv-train': unique_vars_train,'rd-train': r_diff_train, 
-                   'model-ctg-ev-train': set_vars_train, 'model-ctg-r-train': set_cor_train, 
-                   'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train,
-                   'full-model-r': full_r_test, 'full-model-r-train': full_r_train} 
-        # results = {'full-model-r': full_r_test, 'full-model-r-train': full_r_train}
-        results = {'model-ctg-ev': set_vars, 'model-ctg-r': set_r,
-                   'model-ctg-ev-train': set_vars_train, 'model-ctg-r-train': set_cor_train, }
+        # results = {'uv':unique_vars, 'rd': r_diff, 
+        #            'model-ctg-ev': set_vars, 'model-ctg-r': set_r, 
+        #            'uv-train': unique_vars_train,'rd-train': r_diff_train, 
+        #            'model-ctg-ev-train': set_vars_train, 'model-ctg-r-train': set_cor_train, 
+        #            'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train,
+        #            'full-model-r': full_r_test, 'full-model-r-train': full_r_train} 
+        results = {'full-model-r': full_r_test, 'full-model-r-train': full_r_train,
+                    'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train,}
+        # results = {'model-ctg-ev': set_vars, 'model-ctg-r': set_r,
+        #            'model-ctg-ev-train': set_vars_train, 'model-ctg-r-train': set_cor_train, }
         for index_name, result in results.items():
             save_result(result, index_name)
         
