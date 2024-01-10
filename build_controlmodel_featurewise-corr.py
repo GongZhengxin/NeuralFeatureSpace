@@ -103,7 +103,7 @@ for sub in subs:
         norm_metric = 'session'
         brain_resp = train_data_normalization(brain_resp, metric=norm_metric)
         # mean_test_resp = zscore(test_resp.mean(axis=0))
-        mean_test_resp = zscore(mean_test_resp)
+        mean_test_resp = zscore(mean_test_resp, None)
         num_voxel = brain_resp.shape[-1]
 
         # coordinate
@@ -120,8 +120,8 @@ for sub in subs:
             X_mean = zscore(X_mean)
             X_test_mean = zscore(np.mean(X_test, axis=(2,3)))
         
-        y = brain_resp 
-        y_test = mean_test_resp
+        y = zscore(brain_resp) 
+        y_test = zscore(mean_test_resp)
 
         # full model betas, no need for inception 'cause the mean is substracted 
         full_model = LinearRegression(n_jobs=10)

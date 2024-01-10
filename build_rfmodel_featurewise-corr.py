@@ -85,6 +85,8 @@ def compute_full_model_performance_with_stats(idx, voxel):
         full_r2_test = lr.score(X_voxel_test, y_voxel_test)
         full_r_train = np.corrcoef(lr.predict(X_voxel), y_voxel)[0,1]
         full_r_test = np.corrcoef(lr.predict(X_voxel_test), y_voxel_test)[0,1]
+        
+        # 计算统计量 
         model = sm.OLS(y_voxel, X_voxel)
         model_summary = model.fit()
         # 提取所需的统计量：回归系数、标准误差、p 值
@@ -126,7 +128,7 @@ def compute_fullmodel_stats(idx, voxel):
     return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
             'fullm-p': p_values}   
 
-def compute_fullmodel_expvar_debug(idx, voxel):
+def compute_fullmodel_expvar(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
     # initialize the outputs
     full_r2_test, full_r2_train = np.nan, np.nan
@@ -176,36 +178,6 @@ def compute_fullmodel_expvar_debug(idx, voxel):
     return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
             'full-model-r': full_r_test, 'full-model-r-train': full_r_train, 
             'testnan' : test_nan, 'trainnan' : train_nan}
-
-def compute_fullmodel_expvar(idx, voxel):
-    global X, X_test, y, y_test, i, j, labels
-    # initialize the outputs
-    full_r2_test, full_r2_train = np.nan, np.nan
-    full_r_test, full_r_train = np.nan, np.nan
-    # load receptive field
-    if not voxel in guassparams.keys():
-        pass
-    else:
-        print(f'{idx} == {voxel}')
-        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
-        receptive_field = adjust_RF(receptive_field)
-        # saptial summation
-        X_voxel = np.sum(X * receptive_field, axis=(2,3))
-        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
-        # 特征标准化, 均值都已经减掉了
-        X_voxel = zscore(X_voxel)
-        X_voxel_test = (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
-        # 取出当前体素的训练集和测试集神经活动
-        y_voxel = y[:, idx]
-        y_voxel_test = y_test[:, idx]
-        # full model betas, no need for inception 'cause the mean is substracted 
-        beta_all = np.linalg.lstsq(X_voxel, y_voxel, rcond=None)[0]
-        # # calc the full model performance on train set
-        full_r2_train, full_r_train = calc_explained_var_and_corr(X_voxel, beta_all, y_voxel)
-        # calc the full model performance on test set
-        full_r2_test, full_r_test = calc_explained_var_and_corr(X_voxel_test, beta_all, y_voxel_test)
-    return {'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
-            'full-model-r': full_r_test, 'full-model-r-train': full_r_train}
 
 def compute_feature_unique_var_insetmodel(idx, voxel):
     global X, X_test, y, y_test, i, j, labels, set_r2s_train, set_r2s_test, set_rs_train, set_rs_test
@@ -515,7 +487,6 @@ def compute_voxel_correlation(idx, voxel):
     return simple_cor
 
 # subs = ['sub-03'] # ,, 'sub-05' 'sub-04', 'sub-02','sub-06', 'sub-07''sub-04', 'sub-08', 'sub-02','sub-06', 'sub-07','sub-09'
-# subs = [ 'sub-03']#
 subs = [f'sub-0{isub+1}' for isub in range(9)] 
 sub = subs[0]
 sleep_time = 5200*(subs.index(sub)+1)
@@ -683,7 +654,7 @@ for sub in subs:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
 
-        # results = Parallel(n_jobs=25)(delayed(compute_fullmodel_expvar_debug)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # results = Parallel(n_jobs=25)(delayed(compute_fullmodel_expvar)(idx, voxel) for idx, voxel in zip(idxs, voxels))
         # for indexname in ['full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train']:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
@@ -694,7 +665,7 @@ for sub in subs:
 
         # for idx, voxel in zip(idxs[480:520], voxels[480:520]):
         #     print(idx, '  ', voxel)
-        #     res = compute_fullmodel_expvar_debug(idx, voxel)
+        #     res = compute_fullmodel_expvar(idx, voxel)
         
         # unique_var_on_coco = np.array([ _['uv'] for _ in results])
         # r_diff_on_coco = np.array([ _['rd'] for _ in results])
