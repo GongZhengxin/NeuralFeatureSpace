@@ -93,17 +93,19 @@ def compute_full_model_performance_with_stats(idx, voxel):
         coefficients = model_summary.params
         standard_errors = model_summary.bse
         p_values = model_summary.pvalues
+        # f_statistic = model.fvalue
+        fp_value = model_summary.f_pvalue
     return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
-            'fullm-p': p_values, 
+            'fullm-p': p_values, 'fullm-f-pvalus':fp_value,
             'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
             'full-model-r': full_r_test, 'full-model-r-train': full_r_train, 
             'testnan' : test_nan, 'trainnan' : train_nan}
 
 def compute_fullmodel_stats(idx, voxel):
     global X, y, i, j, labels
-    coefficients = np.nan*np.zeros(X.shape[1])
-    standard_errors = np.nan*np.zeros(X.shape[1])
-    p_values = np.nan*np.zeros(X.shape[1])
+    # coefficients = np.nan*np.zeros(X.shape[1])
+    # standard_errors = np.nan*np.zeros(X.shape[1])
+    # p_values = np.nan*np.zeros(X.shape[1])
     # load receptive field
     if not voxel in guassparams.keys():
         pass
@@ -114,19 +116,20 @@ def compute_fullmodel_stats(idx, voxel):
         # saptial summation
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         # 特征标准化, 均值都已经减掉了
-        X_voxel = zscore(X_voxel)
-        if np.isnan(X_voxel).any():
-            X_voxel = np.nan_to_num(X_voxel)
+        X_voxel = np.nan_to_num(zscore(X_voxel))
         # 取出当前体素的训练集和测试集神经活动
         y_voxel = zscore(y[:, idx])
         model = sm.OLS(y_voxel, X_voxel)
         model_summary = model.fit()
         # 提取所需的统计量：回归系数、标准误差、p 值
-        coefficients = model_summary.params
-        standard_errors = model_summary.bse
-        p_values = model_summary.pvalues
-    return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
-            'fullm-p': p_values}   
+
+        # coefficients = model_summary.params
+        # standard_errors = model_summary.bse
+        # p_values = model_summary.pvalues
+        fp_value = model_summary.f_pvalue
+    return {'fullm-f-pvalue':fp_value}
+    # return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
+    #         'fullm-p': p_values, 'fullm-f-pvalues':fp_value,}   
 
 def compute_fullmodel_expvar(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
@@ -681,9 +684,10 @@ for sub in subs:
         # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p']:
         #     index = np.array([ _[indexname] for _ in results])
         #     save_result(index, indexname)
-        results = Parallel(n_jobs=25)(delayed(compute_full_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        for indexname in ['full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
-                          'fullm-coef', 'fullm-bse', 'fullm-p', 'testnan', 'trainnan']:
+        #, 'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
+                        #   'fullm-coef', 'fullm-bse', 'fullm-p', 'testnan', 'trainnan'
+        results = Parallel(n_jobs=20)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['fullm-f-pvalue']:
             index = np.array([ _[indexname] for _ in results])
             save_result(index, indexname)
 
