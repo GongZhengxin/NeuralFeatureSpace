@@ -103,6 +103,7 @@ def compute_full_model_performance_with_stats(idx, voxel):
 
 def compute_fullmodel_stats(idx, voxel):
     global X, y, i, j, labels
+    fp_value = np.nan
     # coefficients = np.nan*np.zeros(X.shape[1])
     # standard_errors = np.nan*np.zeros(X.shape[1])
     # p_values = np.nan*np.zeros(X.shape[1])
