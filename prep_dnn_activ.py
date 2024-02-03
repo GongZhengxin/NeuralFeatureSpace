@@ -143,9 +143,9 @@ for sub in subs:
     print(f'save {sub} image activation data shape of : {activations_arr.shape}')
     layername = layer['name']
     layername = layername.replace('.','')
-    np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}.npy'), activations_arr)
+    #np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}.npy'), activations_arr)
     if activations_arr.shape[-1] > 28 and downsample:
         activations_arr = downsample_4d_efficient(activations_arr, (28,28))
-        np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}_ds.npy'), activations_arr)
+        #np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}_ds.npy'), activations_arr)
     activations.clear()
     print(f'at prep image tensor : {time.time() - t_begin} s')

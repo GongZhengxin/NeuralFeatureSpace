@@ -34,7 +34,6 @@ def adjust_RF(receptive_field):
     #     cur_receptive_field = cur_receptive_field / (cur_receptive_field.sum() + 1e-20)
     return cur_receptive_field
 
-
 def save_result(result, indexname):
     global performance_path, voxel_indices, sub, mask_name, layername
     if result.ndim > 1:
@@ -53,6 +52,7 @@ def compute_full_model_performance_with_stats(idx, voxel):
     # initialize the outputs
     full_r2_test, full_r2_train = np.nan, np.nan
     full_r_test, full_r_train = np.nan, np.nan
+    fp_value = np.nan
     # check nan
     test_nan, train_nan = 0, 0
     # load receptive field
@@ -505,7 +505,7 @@ while 1:
         print(f'checkfile not exists, wait again')
         time.sleep(180)
 # subs = [sub]
-
+feature_filter = np.array([1,3,17,21,28,29,35,37,45,47,49,57,58,60])
 for sub in subs:
     with Timer() as t:
         inputlayername = 'googlenet-conv2' 
@@ -527,7 +527,7 @@ for sub in subs:
         retino_path = pjoin(work_dir, 'build/retinoparams')
         guass_path = pjoin(work_dir, 'build/gaussianparams')
         # save out path
-        performance_path = pjoin(work_dir, 'build/featurewise-corr')
+        performance_path = pjoin(work_dir, 'build/featurewise-corr/filtered')
         # save path
         if not os.path.exists(pjoin(performance_path, sub)):
             os.makedirs(pjoin(performance_path, sub))
@@ -586,6 +586,11 @@ for sub in subs:
             X_test = coco_activations[:, 0:63, :, :]
         y = brain_resp
         y_test = mean_test_resp
+
+        # filter X
+        X = X[:, feature_filter, :, :]
+        X_test = X_test[:, feature_filter, :, :]
+
         # # shuffle X
         # shuffle_indices = [_ for _ in range(100)] + [_ for _ in range(200, 1000)] + [_ for _ in range(100,200)]
         # for isess in range(4):
@@ -681,15 +686,16 @@ for sub in subs:
         # cate_ev_on_im = np.array([ _['model-ctg-ev-train'] for _ in results])
         # cate_r_on_im = np.array([ _['model-ctg-r-train'] for _ in results])
             
-        # results = Parallel(n_jobs=10)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p']:
-        #     index = np.array([ _[indexname] for _ in results])
-        #     save_result(index, indexname)
-        #, 'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
-                        #   'fullm-coef', 'fullm-bse', 'fullm-p', 'testnan', 'trainnan'
-        results = Parallel(n_jobs=20)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        for indexname in ['fullm-f-pvalue']:
+        results = Parallel(n_jobs=15)(delayed(compute_full_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalus',
+                          'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
+                           'testnan', 'trainnan']:
             index = np.array([ _[indexname] for _ in results])
             save_result(index, indexname)
+        
+        # results = Parallel(n_jobs=20)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # for indexname in ['fullm-f-pvalue']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
 
     print(f'{sub} consume : {t.interval} s')
