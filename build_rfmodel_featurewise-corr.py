@@ -35,14 +35,76 @@ def adjust_RF(receptive_field):
     return cur_receptive_field
 
 def save_result(result, indexname):
-    global performance_path, voxel_indices, sub, mask_name, layername
+    global performance_path, voxels, sub, mask_name, layername
     if result.ndim > 1:
         all_performace = np.nan * np.zeros((result.shape[1], 59412))
-        all_performace[:, voxel_indices] = np.array(result).transpose()
+        all_performace[:, np.array(voxels)] = np.array(result).transpose()
     else:
         all_performace = np.nan * np.zeros((1, 59412))
-        all_performace[:, voxel_indices] = np.array(result)
+        all_performace[0, np.array(voxels)] = np.array(result)
     np.save(pjoin(performance_path, sub, f'{sub}_bm-{mask_name}_layer-{layername}_{indexname}.npy'), all_performace)
+
+def compute_pca_model_performance_with_stats(idx, voxel):
+    global X, X_test, y, y_test, i, j, labels, axis, npc
+    coefficients = np.nan*np.zeros(npc)
+    standard_errors = np.nan*np.zeros(npc)
+    p_values = np.nan*np.zeros(npc)
+    # initialize the outputs
+    full_r2_test, full_r2_train = np.nan, np.nan
+    full_r_test, full_r_train = np.nan, np.nan
+    fp_value = np.nan
+    # check nan
+    test_nan, train_nan = 0, 0
+    # load receptive field
+    if not voxel in guassparams.keys():
+        pass
+    else:
+        print(f'{sub} : {idx} == {voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        receptive_field = adjust_RF(receptive_field)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+
+        # project to axis
+        X_voxel = np.dot(X_voxel, axis)
+        X_voxel_test = np.dot(X_voxel_test, axis)
+
+        # 特征标准化, 均值都已经减掉了
+        X_voxel = zscore(X_voxel)
+        X_voxel_test = zscore(X_voxel_test)# (X_voxel_test - X_voxel.mean(axis=0))/ X_voxel.std(axis=0)
+        if np.isnan(X_voxel).any():
+            train_nan = 1
+            X_voxel = np.nan_to_num(X_voxel)
+        if np.isnan(X_voxel_test).any():
+            test_nan = 1
+            X_voxel_test = np.nan_to_num(X_voxel_test)
+        
+        # 取出当前体素的训练集和测试集神经活动
+        y_voxel = zscore(y[:, idx])
+        y_voxel_test = zscore(y_test[:, idx])
+        
+        lr = LinearRegression()
+        lr.fit(X_voxel, y_voxel)
+        full_r2_train = lr.score(X_voxel, y_voxel)
+        full_r2_test = lr.score(X_voxel_test, y_voxel_test)
+        full_r_train = np.corrcoef(lr.predict(X_voxel), y_voxel)[0,1]
+        full_r_test = np.corrcoef(lr.predict(X_voxel_test), y_voxel_test)[0,1]
+        
+        # 计算统计量 
+        model = sm.OLS(y_voxel, X_voxel)
+        model_summary = model.fit()
+        # 提取所需的统计量：回归系数、标准误差、p 值
+        coefficients = model_summary.params
+        standard_errors = model_summary.bse
+        p_values = model_summary.pvalues
+        # f_statistic = model.fvalue
+        fp_value = model_summary.f_pvalue
+    return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
+            'fullm-p': p_values, 'fullm-f-pvalue':fp_value,
+            'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
+            'full-model-r': full_r_test, 'full-model-r-train': full_r_train, 
+            'testnan' : test_nan, 'trainnan' : train_nan}
 
 def compute_full_model_performance_with_stats(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
@@ -96,7 +158,7 @@ def compute_full_model_performance_with_stats(idx, voxel):
         # f_statistic = model.fvalue
         fp_value = model_summary.f_pvalue
     return {'fullm-coef': coefficients, 'fullm-bse': standard_errors, 
-            'fullm-p': p_values, 'fullm-f-pvalus':fp_value,
+            'fullm-p': p_values, 'fullm-f-pvalue':fp_value,
             'full-model-ev': full_r2_test, 'full-model-ev-train': full_r2_train, 
             'full-model-r': full_r_test, 'full-model-r-train': full_r_train, 
             'testnan' : test_nan, 'trainnan' : train_nan}
@@ -491,7 +553,7 @@ def compute_voxel_correlation(idx, voxel):
     return simple_cor
 
 # subs = ['sub-03'] # ,, 'sub-05' 'sub-04', 'sub-02','sub-06', 'sub-07''sub-04', 'sub-08', 'sub-02','sub-06', 'sub-07','sub-09'
-subs = [f'sub-0{isub+1}' for isub in range(9)] 
+subs = [f'sub-0{isub+1}' for isub in range(9)]
 sub = subs[0]
 sleep_time = 5200*(subs.index(sub)+1)
 check_file = f'/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/build/gaussianparams/{sub}_layer-googlenet-conv2_Gauss.npy'
@@ -505,7 +567,21 @@ while 1:
         print(f'checkfile not exists, wait again')
         time.sleep(180)
 # subs = [sub]
-feature_filter = np.array([1,3,17,21,28,29,35,37,45,47,49,57,58,60])
+# double sig
+# feature_filter = np.array([1,3,17,21,28,29,35,37,45,47,49,57,58,60])
+
+# # in every case sig
+# feature_filter = np.array([1,47,60,23,49,28,29,37,2,5,21,42,45,3,35,40,17,57,51,58,25,52,61,18])
+
+# # single sig
+# feature_filter = np.array([1,47,60,49,28,29,37,21,42,45,3,35,17,57,58,25])
+# time.sleep(1800)
+
+# pca
+axis_path = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/googlenet_conv2_pca_space.npy'
+npc = 16
+axis = np.load(axis_path)[0, :, 0:npc]
+
 for sub in subs:
     with Timer() as t:
         inputlayername = 'googlenet-conv2' 
@@ -527,7 +603,7 @@ for sub in subs:
         retino_path = pjoin(work_dir, 'build/retinoparams')
         guass_path = pjoin(work_dir, 'build/gaussianparams')
         # save out path
-        performance_path = pjoin(work_dir, 'build/featurewise-corr/filtered')
+        performance_path = pjoin(work_dir, 'build/featurewise-corr/pca')
         # save path
         if not os.path.exists(pjoin(performance_path, sub)):
             os.makedirs(pjoin(performance_path, sub))
@@ -588,9 +664,12 @@ for sub in subs:
         y_test = mean_test_resp
 
         # filter X
-        X = X[:, feature_filter, :, :]
-        X_test = X_test[:, feature_filter, :, :]
-
+        try:
+            X = X[:, feature_filter, :, :]
+            X_test = X_test[:, feature_filter, :, :]
+            print('!!Note: feature filter will be carried out >>')
+        except NameError:
+            print('With feature shape:', X.shape)
         # # shuffle X
         # shuffle_indices = [_ for _ in range(100)] + [_ for _ in range(200, 1000)] + [_ for _ in range(100,200)]
         # for isess in range(4):
@@ -686,8 +765,15 @@ for sub in subs:
         # cate_ev_on_im = np.array([ _['model-ctg-ev-train'] for _ in results])
         # cate_r_on_im = np.array([ _['model-ctg-r-train'] for _ in results])
             
-        results = Parallel(n_jobs=15)(delayed(compute_full_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalus',
+        # results = Parallel(n_jobs=15)(delayed(compute_full_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalue',
+        #                   'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
+        #                    'testnan', 'trainnan']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
+        
+        results = Parallel(n_jobs=20)(delayed(compute_pca_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalue',
                           'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
                            'testnan', 'trainnan']:
             index = np.array([ _[indexname] for _ in results])
