@@ -1,5 +1,7 @@
 import os
 import gc
+import torch
+import torch.nn as nn
 import numpy as np
 import nibabel as nib
 import statsmodels.api as sm
@@ -66,9 +68,9 @@ def compute_pca_model_performance_with_stats(idx, voxel):
         X_voxel = np.sum(X * receptive_field, axis=(2,3))
         X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
 
-        # project to axis
-        X_voxel = np.dot(X_voxel, axis)
-        X_voxel_test = np.dot(X_voxel_test, axis)
+        # # project to axis
+        # X_voxel = np.dot(X_voxel, axis)
+        # X_voxel_test = np.dot(X_voxel_test, axis)
 
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
@@ -553,8 +555,8 @@ def compute_voxel_correlation(idx, voxel):
     return simple_cor
 
 # subs = ['sub-03'] # ,, 'sub-05' 'sub-04', 'sub-02','sub-06', 'sub-07''sub-04', 'sub-08', 'sub-02','sub-06', 'sub-07','sub-09'
-subs = [f'sub-0{isub+1}' for isub in range(9)]
-sub = subs[0]
+subs = [f'sub-0{isub+1}' for isub in range(0, 9)]
+sub = subs[-1]
 sleep_time = 5200*(subs.index(sub)+1)
 check_file = f'/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/build/gaussianparams/{sub}_layer-googlenet-conv2_Gauss.npy'
 print(f'wait {sub}; sleeping for {sleep_time} seconds')
@@ -577,14 +579,17 @@ while 1:
 # feature_filter = np.array([1,47,60,49,28,29,37,21,42,45,3,35,17,57,58,25])
 # time.sleep(1800)
 
-# pca
-axis_path = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/googlenet_conv2_pca_space.npy'
-npc = 16
-axis = np.load(axis_path)[0, :, 0:npc]
+# last 12 significant feature
+feature_filter = np.array([ 1, 37, 28, 47, 49, 42, 45, 35,  3, 57, 58])
 
+# pca
+axis_path = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/prep/stimaxis/googlenet-conv1_imagenet36k_pcspace.npy'
+npc = 16
+axis = np.load(axis_path)[0, :, 0:npc].astype(np.float32)
+non_linear = False
 for sub in subs:
     with Timer() as t:
-        inputlayername = 'googlenet-conv2' 
+        inputlayername = 'googlenet-conv1' 
         layer = {'name': inputlayername, 'size': net_size_info[inputlayername.replace('raw-', '')]}#alexnet_info[inputlayername]
         layername = layer['name']
         layername = layername.replace('.','')
@@ -603,7 +608,7 @@ for sub in subs:
         retino_path = pjoin(work_dir, 'build/retinoparams')
         guass_path = pjoin(work_dir, 'build/gaussianparams')
         # save out path
-        performance_path = pjoin(work_dir, 'build/featurewise-corr/pca')
+        performance_path = pjoin(work_dir, 'build/featurewise-corr/last-12-feature')
         # save path
         if not os.path.exists(pjoin(performance_path, sub)):
             os.makedirs(pjoin(performance_path, sub))
@@ -613,7 +618,12 @@ for sub in subs:
         activations = np.load(pjoin(image_activations_path, f'{sub}_{layername}.npy'))
         coco_activations = np.load(pjoin(image_activations_path, f'{test_set_name}_{layername}.npy'))
         print(f'activations shape of {activations.shape}')
-        guassparams = np.load(pjoin(guass_path, f'{sub}_layer-{layername}_Gauss.npy'), allow_pickle=True)[0]
+        if 'conv1' in layername:
+            guass_layername = layername.replace('conv1', 'conv2')
+            guassparams = np.load(pjoin(guass_path, f'{sub}_layer-{guass_layername}_Gauss.npy'), allow_pickle=True)[0]
+            print(pjoin(guass_path, f'{sub}_layer-{guass_layername}_Gauss.npy'))
+        else:
+            guassparams = np.load(pjoin(guass_path, f'{sub}_layer-{layername}_Gauss.npy'), allow_pickle=True)[0]
         
         # load, reshape and average the resp
         test_resp = np.load(pjoin(resp_path, f'{sub}_{test_set_name}_beta.npy'))
@@ -660,6 +670,30 @@ for sub in subs:
         if layername == 'googlenet-conv2':
             X = activations[:, 0:63, :, :]
             X_test = coco_activations[:, 0:63, :, :]
+        else:
+            X = activations
+            X_test = coco_activations
+        
+        if non_linear:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            in_channels = X.shape[1]
+            out_channels = npc
+            conv1x1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+            # 手动设置卷积层的权重（系数）
+            conv1x1.weight.data = torch.from_numpy(axis.transpose()[:, :, np.newaxis, np.newaxis])
+            relu = nn.ReLU()
+            # 固定权重，使其不可训练
+            conv1x1.weight.requires_grad = False
+            # 将卷积层和激活函数移到GPU上
+            conv1x1 = conv1x1.to(device)
+            relu = relu.to(device)
+            
+            X = relu(conv1x1(torch.from_numpy(X).to(device))).cpu().detach().numpy()
+            torch.cuda.empty_cache()
+
+            X_test = relu(conv1x1(torch.from_numpy(X_test).to(device))).cpu().detach().numpy()
+            torch.cuda.empty_cache()
+
         y = brain_resp
         y_test = mean_test_resp
 
@@ -765,19 +799,19 @@ for sub in subs:
         # cate_ev_on_im = np.array([ _['model-ctg-ev-train'] for _ in results])
         # cate_r_on_im = np.array([ _['model-ctg-r-train'] for _ in results])
             
-        # results = Parallel(n_jobs=15)(delayed(compute_full_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
-        # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalue',
-        #                   'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
-        #                    'testnan', 'trainnan']:
-        #     index = np.array([ _[indexname] for _ in results])
-        #     save_result(index, indexname)
-        
-        results = Parallel(n_jobs=20)(delayed(compute_pca_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        results = Parallel(n_jobs=25)(delayed(3)(idx, voxel) for idx, voxel in zip(idxs, voxels))
         for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalue',
                           'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
                            'testnan', 'trainnan']:
             index = np.array([ _[indexname] for _ in results])
             save_result(index, indexname)
+        
+        # results = Parallel(n_jobs=25)(delayed(compute_pca_model_performance_with_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+        # for indexname in ['fullm-coef', 'fullm-bse', 'fullm-p', 'fullm-f-pvalue',
+        #                   'full-model-ev', 'full-model-ev-train', 'full-model-r', 'full-model-r-train',
+        #                    'testnan', 'trainnan']:
+        #     index = np.array([ _[indexname] for _ in results])
+        #     save_result(index, indexname)
         
         # results = Parallel(n_jobs=20)(delayed(compute_fullmodel_stats)(idx, voxel) for idx, voxel in zip(idxs, voxels))
         # for indexname in ['fullm-f-pvalue']:

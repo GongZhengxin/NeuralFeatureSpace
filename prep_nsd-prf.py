@@ -27,14 +27,17 @@ n_vertices = 59412
 subs = [f'subj0{i}' for i in range(1,9)]
 
 for sub in subs:
-    gifti_files = sorted([_ for _ in os.listdir(gifti_dir) if sub in _])
-
+    gifti_files = sorted([_ for _ in os.listdir(gifti_dir) if sub in _ ])
+    cifti_data = np.nan*np.zeros((len(file_flags), n_vertices))
     for gifti_file in gifti_files:
-        
+        if '.lh.' not in gifti_file:
+            continue 
+        print(gifti_file, end=',')
         hemi = gifti_file.split('.')[1]
         index = gifti_file.split('.')[2]
-        cifti_data = np.nan*np.zeros((len(file_flags), n_vertices))
+        
         if any([flag in index for flag in file_flags]) and hemi=='lh':
+            
             print(gifti_file)
             #
             lh_file = nib.load(pjoin(gifti_dir, gifti_file))

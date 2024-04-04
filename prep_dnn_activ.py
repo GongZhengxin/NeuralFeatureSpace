@@ -32,18 +32,18 @@ pretrained_weights = {'alexnet':  '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObje
                       'googlenet': '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/googlenet-1378be20.pth'}
 pretrained_models = {'alexnet': models.alexnet(),
                      'googlenet': models.googlenet()} 
-inputlayername = 'conv1' # 'inception3a'#'features.3' input('enter layer name:')
+inputlayername = 'maxpool2' #'conv3' #'conv2' # 'inception3a'#'features.3' input('enter layer name:')
 
 # imagenet image dir
 im_image_dir = '/nfs/z1/userhome/GongZhengXin/NVP/data_upload/NOD/stimuli/imagenet'
 cifti_dir = '/nfs/z1/userhome/GongZhengXin/NVP/data_upload/NOD/derivatives/ciftify'
 # experiment info
-subs = ['coco'] #'sub-01', 'sub-09''sub-07', 'sub-01', 'sub-02', 'sub-03', 'sub-04''sub-05', 'sub-06', 'sub-07', 'sub-09'
+subs = ['coco'] #'sub-01', 'sub-09''sub-09''sub-07', 'sub-01', 'sub-02', 'sub-03', 'sub-04''sub-05', 'sub-06', 'sub-07', 'sub-09'
 print(subs, netname)
 # time.sleep(480*2)
 downsample = True
 for sub in subs:
-    sessions = ['imagenet01','imagenet02','imagenet03','imagenet04']
+    sessions = ['imagenet01']#,'imagenet02','imagenet03','imagenet04'
     # device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -75,7 +75,7 @@ for sub in subs:
         # collect image names
         image_names_files = []
         for folder in folders:
-            for img_label_txt in glob.glob(os.path.join(folder, "*label.txt")): 
+            for img_label_txt in glob.glob(os.path.join(folder, "*_label.txt")): 
                 image_names_files.append(img_label_txt) # 顺序为 1 10 2 3 ...
 
         # compose image paths
@@ -144,8 +144,8 @@ for sub in subs:
     layername = layer['name']
     layername = layername.replace('.','')
     np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}.npy'), activations_arr)
-    if activations_arr.shape[-1] > 28 and downsample:
-        activations_arr = downsample_4d_efficient(activations_arr, (28,28))
-        np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}_ds.npy'), activations_arr)
+    # if activations_arr.shape[-1] > 28 and downsample:
+    #     activations_arr = downsample_4d_efficient(activations_arr, (28,28))
+    #     np.save(os.path.join(image_activations_path, f'{sub}_{netname}-{layername}_ds.npy'), activations_arr)
     activations.clear()
     print(f'at prep image tensor : {time.time() - t_begin} s')

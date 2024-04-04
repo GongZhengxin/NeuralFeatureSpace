@@ -9,8 +9,15 @@ from scipy.stats import zscore
 import nibabel as nib
 from nibabel import cifti2
 import scipy.io as sio
-from dnnbrain.dnn.core import Activation
+# from dnnbrain.dnn.core import Activation
 
+conv2_human_labels = {
+    'color' : [2, 48, 36, 46, 35, 26, 16, 17],
+    'colorcontrast': [53, 50, 42, 45, 21, 12, 9, 6, 10, 20, 5, 56, 57, 8],
+    'gabor': [0,1,4,13,19, 22,23,27,32,34, 39,43,44,47,54, 60,61,62,63,25, 29,24,18,49,38],
+    'hatch': [14, 30, 33, 41],
+    'texture': [3,40,7,11,37,15,28,51,52,55,58,59,31],
+}
 
 conv2_labels = {
     'lowfreq':[1,13,27,47,56,60,23,49,0,43,28,29, 34,8,37,19,15],
@@ -18,7 +25,7 @@ conv2_labels = {
     'colorcontrast':[5,9,10,12,20,21,42,45,50,53],
     'multicolor':[3,33,35,40,17,16,57,26,31],
     'complxgabor':[51,58,30,25,52,54,22,61,55],
-    'gabor': [4,6,32,38,41,7,11,18,24,39],# 63: all zeros,
+    'gabor': [4,6,32,38,41,7,11,18,24,39, 63], #: all zeros,
     'other':[44,62,59],
     'hatch':[14]
 }
@@ -53,7 +60,9 @@ net_size_info = {'features.0':55, 'features.1':55,
                 'googlenet-conv1' : 114,
                 'googlenet-conv2' : 57,
                 'googlenet-conv3' : 57,
-                'googlenet-inception3a' : 28}
+                'googlenet-maxpool2' : 28,
+                'googlenet-inception3a' : 28,
+                'googlenet-concate' : 28}
 
 def save2cifti(file_path, data, brain_models, map_names=None, volume=None, label_tables=None):
     """
