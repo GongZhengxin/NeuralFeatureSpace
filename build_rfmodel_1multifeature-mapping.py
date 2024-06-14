@@ -22,15 +22,15 @@ def compute_corr_matrix( i, j):
     y_pred = zscore(y_pred, axis=0)
     return i, j, lr, y_pred
 
-for sub in subs[2 : ]:
+for sub in subs:
     with Timer() as t:
         print(sub)
-        inputlayername = 'googlenet-maxpool2' #'googlenet-inception3a'#conv2
+        inputlayername = 'googlenet-maxpool1' #'googlenet-inception3a'#conv2
         layer = {'name': inputlayername, 'size':net_size_info[inputlayername.replace('raw-','')]}
         layername = layer['name']
         layername = layername.replace('.','')
         mask_name = 'primaryvis-in-MMP' #''
-        downsample = True
+        downsample = False
 
         # path setting
         work_dir = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/'
@@ -171,6 +171,8 @@ for sub in subs[2 : ]:
         np.save(os.path.join(corrmap_path, file), mean_data)
 
     print(f'{sub} consume : {t.interval} s')
+
+
 
 
 

@@ -30,13 +30,12 @@ for subj, fpath in enumerate(file_paths):
     print(f"{subj+1}号被试数据加载成功！有{n_pics}张图片")
 
     # 【选取不同量的图片进行测试】选取不同图片数量进行处理（batch无关）
-    step =  16
+    step =  4000
     print('开始计算相关矩阵')
     sum_of_matrices = np.zeros((64, 64))
 
-    result = Parallel(n_jobs=25)(delayed(compute_correlation_matrix)(idx) for idx in range(0, n_pics, step))
+    result = Parallel(n_jobs=1)(delayed(compute_correlation_matrix)(idx) for idx in range(0, n_pics, step))
     results.append(result)
-
 
 all_sub_mean = []
 for subj, result in enumerate(results):
@@ -48,18 +47,18 @@ for subj, result in enumerate(results):
     print(f"开始保存{subj+1}号被试的平均相关矩阵")
     sub_mean_corr = np.array(sub_mean_corr).mean(axis=0)
     
-    np.save(pjoin(workdir, f'prep/image_activations/subj-{subj+1}_conv2_avg-corrmatrix.npy'), sub_mean_corr)
+    np.save(pjoin(workdir, f'prep/image_activations/pca/subj-{subj+1}_conv2_avg-corrmatrix_step-4000.npy'), sub_mean_corr)
     
     print(f"{subj+1}号被试的平均相关矩阵保存成功！{sub_mean_corr.shape}")
 
 all_sub_mean = np.array(all_sub_mean).mean(axis=0)
 
-np.save(pjoin(workdir, f'prep/image_activations/subj-all_avg-corrmatrix_googlenet_conv2.npy'), all_sub_mean)
+np.save(pjoin(workdir, f'prep/image_activations/pca/subj-all_avg-corrmatrix_googlenet_conv2_step-4000.npy'), all_sub_mean)
 print(f"全体被试的平均相关矩阵保存成功！{all_sub_mean.shape}")
 
-import pickle
-with open(pjoin(workdir, 'prep/image_activations/conv2_results.pkl'), 'wb') as f:
-    pickle.dump(results, f)
+# import pickle
+# with open(pjoin(workdir, 'prep/image_activations/pca/conv2_results.pkl'), 'wb') as f:
+#     pickle.dump(results, f)
 
 # # 读取—— googlenet-conv2 maxpool2 inception3a 激活
 # workdir =  '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline'

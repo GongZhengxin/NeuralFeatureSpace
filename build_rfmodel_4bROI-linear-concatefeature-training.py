@@ -58,7 +58,7 @@ def pearson_correlation(y_true, y_pred):
     # 计算并返回皮尔森相关系数
     return pearsonr(y_true, y_pred)[0]
 
-for roi_name in ['V4']:# , ,  
+for roi_name in ['V4']: #  
     val_scores, val_corrs = [], []
     test_scores, test_corrs = [], []
     # roi_name = 'V1'

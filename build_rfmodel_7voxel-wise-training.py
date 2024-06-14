@@ -64,7 +64,7 @@ concate_path = pjoin(work_dir, 'prep/roi-concate')
 # save out path
 performance_path = pjoin(work_dir, 'build/roi-voxelwisemodel')
 os.makedirs(performance_path, exist_ok=True)
-inputlayernames = ['googlenet-conv2', 'googlenet-maxpool2', 'googlenet-inception3a'] #'googlenet-conv2' #'googlenet-maxpool2' # 'googlenet-inception3a' #
+inputlayernames = ['googlenet-conv2'] # ['googlenet-maxpool1', 'googlenet-maxpool2', 'googlenet-inception3a'] #'googlenet-conv2' #'googlenet-maxpool2' # 'googlenet-inception3a' #
 rois =  ['V1', 'V2', 'V3', 'V4']
 test_set_name = 'coco'
 subs = [f'sub-0{isub+1}' for isub in range(0, 9)]
@@ -75,7 +75,7 @@ for inputlayername in inputlayernames:
     layername = layername.replace('.','')
 
     for roi_name in rois:
-        for sub in subs[1::]:
+        for sub in subs[1:]:
             t0 = time.time()
             print(sub, layername)
             # training feature and response

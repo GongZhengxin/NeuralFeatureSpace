@@ -15,20 +15,28 @@ import matplotlib.pyplot as plt
 from utils import train_data_normalization, Timer, net_size_info, get_roi_data
 
 work_dir = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline'
-quater_names = [f'ang-quater{_+1}' for _ in range(8)]
-angsplotlines = [0, 90, 180, 270, 360]
+
+angsplotlines = [0, 45, 90, 135, 180, 225, 270, 315, 360] #[0, 90, 180, 270, 360]
 eccsplitlines = [0, 2, 4, 6, 8]
 concate_path = pjoin(work_dir, 'prep/roi-concate')
 layername = 'googlenet-conv2'
-rois =  ['V1', 'V2', 'V3', 'V4']
+rois =  ['V1']# ,'V2', 'V3', 'V4'
 subs = [f'sub-0{_+1}' for _ in range(9)]
-
+save_dir = 'finer-retino-grid'
+os.makedirs(pjoin(concate_path, save_dir), exist_ok=True)
 for roiname in rois:
     all_subjects_data = pd.DataFrame()
     for sub in subs:
         map_dir = pjoin(work_dir, 'anal/brainmap/masked_retinotopy')
-        ang = nib.load(pjoin(map_dir, sub, f'{sub}_masked-prior-prf.dscalar.nii')).get_fdata()[0,:]
-        ecc = nib.load(pjoin(map_dir, sub, f'{sub}_masked-prior-prf.dscalar.nii')).get_fdata()[1,:]
+        retinofile = pjoin(map_dir, sub, f'{sub}_masked-prior-prf.dscalar.nii') #pjoin(map_dir, sub, f'{sub}_weighted-masked-dnn-prf.dscalar.nii')
+        if 'prior' in retinofile:
+            ang = nib.load(retinofile).get_fdata()[0,:]
+            ecc = nib.load(retinofile).get_fdata()[1,:]
+        else:
+            ang = nib.load(retinofile).get_fdata()[1,:]
+            ecc = nib.load(retinofile).get_fdata()[0,:]
+            ang  = 90 - ang
+            ang[ang < 0] = 360 + ang[ang < 0] 
         voxels = np.load(pjoin(concate_path, sub, f'{sub}_layer-{layername}_{roiname}-voxel.npy'))
         
         ecc_group = np.zeros_like(voxels)
@@ -53,13 +61,13 @@ for roiname in rois:
             })
 
         all_subjects_data = pd.concat([all_subjects_data, subject_data], ignore_index=True)
-    print(pjoin(work_dir, f"prep/roi-concate/retino-grid/all-sub_{roiname}-retino-data.csv"))
-    # all_subjects_data.to_csv(pjoin(work_dir, f"prep/roi-concate/retino-grid/all-sub_{roiname}-retino-data.csv"), index=False)
+    print(pjoin(work_dir, f"prep/roi-concate/{save_dir}/all-sub_{roiname}-retino-data.csv"))
+    all_subjects_data.to_csv(pjoin(work_dir, f"prep/roi-concate/{save_dir}/all-sub_{roiname}-retino-data.csv"), index=False)
 
 for roiname in rois:
-    all_subjects_retinofile = pjoin(work_dir, f'prep/roi-concate/retino-grid/all-sub_{roiname}-retino-data.csv')
+    all_subjects_retinofile = pjoin(work_dir, f'prep/roi-concate/{save_dir}/all-sub_{roiname}-retino-data.csv')
     all_subjects_retino = pd.read_csv(all_subjects_retinofile)
-    os.makedirs(pjoin(work_dir, f'prep/roi-concate/retino-grid/'), exist_ok=True)
+    os.makedirs(pjoin(work_dir, f'prep/roi-concate/{save_dir}/'), exist_ok=True)
     for sub in subs: 
         subject_retino = all_subjects_retino[all_subjects_retino['subid']==sub]
         ecc_group =  subject_retino['eccgroup'].values
@@ -68,14 +76,14 @@ for roiname in rois:
 
         block_voxels, block_indx = {}, {}
         voxel_num = []
-        for iecc in range(5):
-            for iang in range(4):
+        for iecc in range(len(eccsplitlines)):
+            for iang in range(len(angsplotlines) - 1):
                 grid_voxels = voxels[np.where((ecc_group==iecc) & (ang_group==iang))]
                 block_voxels[f'E{iecc}A{iang}'] = grid_voxels
                 block_indx[f'E{iecc}A{iang}'] = np.array([voxels.tolist().index(_) for _ in grid_voxels])
                 voxel_num.append(len(block_voxels[f'E{iecc}A{iang}']))
-        print(pjoin(work_dir, f'prep/roi-concate/retino-grid/{sub}_{roiname}-retino-grids-voxels.npy'))
-        print(pjoin(work_dir, f'prep/roi-concate/retino-grid/{sub}_{roiname}-retino-grids-idxs.npy'))
-        # np.save(pjoin(work_dir, f'prep/roi-concate/retino-grid/{sub}_{roiname}-retino-grids-voxels.npy'), block_voxels)
-        # np.save(pjoin(work_dir, f'prep/roi-concate/retino-grid/{sub}_{roiname}-retino-grids-idxs.npy'), block_indx)
+        print(pjoin(work_dir, f'prep/roi-concate/{save_dir}/{sub}_{roiname}-retino-grids-voxels.npy'))
+        print(pjoin(work_dir, f'prep/roi-concate/{save_dir}/{sub}_{roiname}-retino-grids-idxs.npy'))
+        np.save(pjoin(work_dir, f'prep/roi-concate/{save_dir}/{sub}_{roiname}-retino-grids-voxels.npy'), block_voxels)
+        np.save(pjoin(work_dir, f'prep/roi-concate/{save_dir}/{sub}_{roiname}-retino-grids-idxs.npy'), block_indx)
 

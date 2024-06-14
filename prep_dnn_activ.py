@@ -32,15 +32,17 @@ pretrained_weights = {'alexnet':  '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObje
                       'googlenet': '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/googlenet-1378be20.pth'}
 pretrained_models = {'alexnet': models.alexnet(),
                      'googlenet': models.googlenet()} 
-inputlayername = 'maxpool2' #'conv3' #'conv2' # 'inception3a'#'features.3' input('enter layer name:')
+inputlayername = 'maxpool2' # 'maxpool1' #'conv2' #'conv3' # 'inception3a' #'features.3' #input('enter layer name:')
 
 # imagenet image dir
 im_image_dir = '/nfs/z1/userhome/GongZhengXin/NVP/data_upload/NOD/stimuli/imagenet'
 cifti_dir = '/nfs/z1/userhome/GongZhengXin/NVP/data_upload/NOD/derivatives/ciftify'
+save_dir_name = 'image_activations_preprocessed'
 # experiment info
-subs = ['coco'] #'sub-01', 'sub-09''sub-09''sub-07', 'sub-01', 'sub-02', 'sub-03', 'sub-04''sub-05', 'sub-06', 'sub-07', 'sub-09'
+
+subs = ['sub-09'] #'sub-01', 'sub-02', 'sub-03','sub-04' , 'sub-05', 'sub-06', 'sub-07', 'sub-08', 'sub-09'
 print(subs, netname)
-# time.sleep(480*2)
+# time.sleep(300*3)
 downsample = True
 for sub in subs:
     sessions = ['imagenet01']#,'imagenet02','imagenet03','imagenet04'
@@ -56,7 +58,7 @@ for sub in subs:
     # output paths
     work_dir = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline/'
     image_name_path = os.path.join(work_dir, 'prep/image_names')
-    image_activations_path = os.path.join(work_dir, 'prep/image_activations')
+    image_activations_path = os.path.join(work_dir, f'prep/{save_dir_name}')
 
     # ===============================================================
     # prep images tensor
@@ -91,10 +93,17 @@ for sub in subs:
 
 
     # intial preprocess
-    transform = transforms.Compose([
-        transforms.Resize((227, 227)),
-        transforms.ToTensor(),
-    ])
+    if 'preprocessed' in save_dir_name:
+        transform = transforms.Compose([
+            transforms.Resize((227, 227)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+    else:
+        transform = transforms.Compose([
+            transforms.Resize((227, 227)),
+            transforms.ToTensor(),
+        ])
 
     # 读取和转换图片
     images = [Image.open(p).convert('RGB') for p in image_paths]

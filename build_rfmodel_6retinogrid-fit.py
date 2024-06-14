@@ -42,21 +42,21 @@ def pearson_correlation(y_true, y_pred):
     return pearsonr(y_true, y_pred)[0]
 
 work_dir = '/nfs/z1/userhome/GongZhengXin/NVP/NaturalObject/data/code/nodretinotopy/mfm_locwise_fullpipeline'
-quater_names = [f'ang-quater{_+1}' for _ in range(8)]
-angsplotlines = [0, 90, 180, 270, 360]
+angsplotlines =  [0, 45, 90, 135, 180, 225, 270, 315, 360] #[0, 90, 180, 270, 360]
 eccsplitlines = [0, 2, 4, 6, 8]
 concate_path = pjoin(work_dir, 'prep/roi-concate')
-performance_path = pjoin(work_dir, 'build/roi-concatemodel/retino-grid')
+grid_name = 'finer-retino-grid'
+performance_path = pjoin(work_dir, f'build/roi-concatemodel/{grid_name}')
 os.makedirs(performance_path, exist_ok=True)
 
-rois =  [ 'V3', 'V4'] #'V1', 'V2',
+rois =  [ 'V2','V3','V4'] # 'V1',
 subs = [f'sub-0{isub+1}' for isub in range(0, 9)]
-layername = 'googlenet-conv2' #'googlenet-maxpool2'
+layername = 'googlenet-maxpool2' #'googlenet-maxpool2'
 # roi_name = 'V2'
-all_grid_performance_cor = np.zeros((9, 5, 4))
-all_grid_performance_ev = np.zeros((9, 5, 4))
-print('sleeping')
-time.sleep(7200)
+all_grid_performance_cor = np.zeros((9, len(eccsplitlines), len(angsplotlines)-1))
+all_grid_performance_ev = np.zeros((9, len(eccsplitlines), len(angsplotlines)-1))
+# print('sleeping')
+# time.sleep(7200)
 for roi_name in rois:
     for isub, sub in enumerate(subs):
         os.makedirs(pjoin(performance_path, roi_name), exist_ok=True)
@@ -73,10 +73,10 @@ for roi_name in rois:
         test_data = np.load(pjoin(concate_path, sub, f'{sub}_layer-{layername}_{roi_name}-test-resp.npy'), mmap_mode='r')
         
         print('loading quater file')
-        idxs_dict = np.load(pjoin(concate_path, 'retino-grid', f'{sub}_{roi_name}-retino-grids-idxs.npy'), allow_pickle=True).item()
+        idxs_dict = np.load(pjoin(concate_path, grid_name, f'{sub}_{roi_name}-retino-grids-idxs.npy'), allow_pickle=True).item()
         
         grid_models = {}
-        grid_performance_cor, grid_performance_ev = np.zeros((5, 4)), np.zeros((5, 4))
+        grid_performance_cor, grid_performance_ev = np.zeros((len(eccsplitlines), len(angsplotlines)-1)), np.zeros((len(eccsplitlines), len(angsplotlines)-1))
         for grid, grid_voxel_idx in idxs_dict.items():
             grid_i, grid_j = int(grid[1]), int(grid[3])
             if len(grid_voxel_idx) == 0:

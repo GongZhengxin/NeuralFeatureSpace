@@ -31,6 +31,31 @@ def adjust_RF(receptive_field):
 
     return cur_receptive_field
 
+def aggmean_voxel_resp_and_feature(idx, voxel):
+    global X, X_test, y, y_test, i, j, labels
+    if not voxel in guassparams.keys():
+        return []
+    else:
+        print(f'AGGmean -{sub} : {idx} == {voxel}')
+        receptive_field = gaussian_2d((i, j), *guassparams[voxel])
+        receptive_field = adjust_RF(receptive_field)
+        # saptial summation
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))# X= feature training set
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))# test set
+        
+        # 特征标准化, 均值都已经减掉了
+        X_voxel_mean, X_voxel_std = X_voxel.mean(axis=0), X_voxel.std(axis=0)
+        X_voxel_test_mean, X_voxel_test_std = X_voxel_test.mean(axis=0), X_voxel_test.std(axis=0)
+        
+        # 取出当前体素的训练集和测试集神经活动
+        y_voxel_mean, y_voxel_std = y[:, idx].mean(), y[:, idx].std()
+        y_voxel_test_mean, y_voxel_test_std = y_test[:, idx].mean(), y_test[:, idx].std()
+        
+        return {'mean-train-feature': X_voxel_mean, 'mean-test-feature': X_voxel_test_mean, 
+                'std-train-feature': X_voxel_std, 'std-test-feature': X_voxel_test_std,
+                'mean-train-resp' : y_voxel_mean, 'mean-test-resp' : y_voxel_test_mean, 
+                'std-train-resp' : y_voxel_std, 'std-test-resp' : y_voxel_test_std,'voxel': voxel}
+
 
 def concate_voxel_resp_and_feature(idx, voxel):
     global X, X_test, y, y_test, i, j, labels
@@ -41,8 +66,8 @@ def concate_voxel_resp_and_feature(idx, voxel):
         receptive_field = gaussian_2d((i, j), *guassparams[voxel])
         receptive_field = adjust_RF(receptive_field)
         # saptial summation
-        X_voxel = np.sum(X * receptive_field, axis=(2,3))
-        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))
+        X_voxel = np.sum(X * receptive_field, axis=(2,3))# X= feature training set
+        X_voxel_test = np.sum(X_test * receptive_field, axis=(2,3))# test set
         
         # 特征标准化, 均值都已经减掉了
         X_voxel = zscore(X_voxel)
@@ -60,10 +85,10 @@ def concate_voxel_resp_and_feature(idx, voxel):
         return {'train-feature': X_voxel, 'test-feature': X_voxel_test, 
                 'train-resp' : y_voxel, 'test-resp' : y_voxel_test, 'idx': idx, 'voxel': voxel}
 
-layers = ['googlenet-conv2', 'googlenet-maxpool2','googlenet-inception3a'] # ,'googlenet-inception3a'
-# 'googlenet-conv2', 
+layers = ['googlenet-conv2', 'googlenet-maxpool1', 'googlenet-maxpool2'] #[, ,'googlenet-inception3a']
+
 for inputlayername in layers:
-    layer = {'name': inputlayername, 'size': net_size_info[inputlayername.replace('raw-', '')]}#alexnet_info[inputlayername]
+    layer = {'name': inputlayername, 'size': net_size_info[inputlayername.replace('raw-', '')]} # alexnet_info[inputlayername]
     layername = layer['name']
     layername = layername.replace('.','')
     labels = conv2_labels
@@ -84,20 +109,19 @@ for inputlayername in layers:
     concate_path = pjoin(work_dir, 'prep/roi-concate')
     subs = [f'sub-0{isub+1}' for isub in range(0, 9)]
 
-
     for sub in subs:
         with Timer() as t:
             print(sub, mask_name, layername)
             # save path
-            if not os.path.exists(pjoin(concate_path, sub)):
-                os.makedirs(pjoin(concate_path, sub))
+            if not os.path.exists(pjoin(concate_path, sub, "newrretino")):
+                os.makedirs(pjoin(concate_path, sub, "newrretino"))
 
             # load
             brain_resp = np.load(pjoin(resp_path, f'{sub}_imagenet_beta.npy'), mmap_mode='r')
             activations = np.load(pjoin(image_activations_path, f'{sub}_{layername}.npy'), mmap_mode='r')
             coco_activations = np.load(pjoin(image_activations_path, f'{test_set_name}_{layername}.npy'), mmap_mode='r')
             print(f'activations shape of {activations.shape}')
-            guassparams = np.load(pjoin(guass_path, f'{sub}_weighted_Gauss.npy'), allow_pickle=True)[0]
+            guassparams = np.load(pjoin(guass_path, f'{sub}_new-weighted_Gauss.npy'), allow_pickle=True)[0]
             
             # load, reshape and average the resp
             test_resp = np.load(pjoin(resp_path, f'{sub}_{test_set_name}_beta.npy'))
@@ -169,11 +193,16 @@ for inputlayername in layers:
             voxels = voxel_indices.tolist()
             idxs = np.arange(num_voxel).tolist()
             # voxel_indices = voxel_indices
-            results = Parallel(n_jobs=30)(delayed(concate_voxel_resp_and_feature)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+            # results = Parallel(n_jobs=15)(delayed(concate_voxel_resp_and_feature)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+            # save_indexnames = ['train-feature', 'test-feature', 'train-resp', 'test-resp', 'voxel']
+            results = Parallel(n_jobs=30)(delayed(aggmean_voxel_resp_and_feature)(idx, voxel) for idx, voxel in zip(idxs, voxels))
+            save_indexnames = ['mean-train-feature', 'mean-test-feature', 'std-train-feature', 'std-test-feature',\
+                    'mean-train-resp', 'mean-test-resp', 'std-train-resp', 'std-test-resp']
+            
             results = [result for result in results if result]
             # 
             voxels = np.array([ _['voxel'] for _ in results])
-            for indexname in ['train-feature', 'test-feature', 'train-resp', 'test-resp', 'voxel']:
+            for indexname in save_indexnames:
                 index = np.array([ _[indexname] for _ in results])
                 for roi in ['V1', 'V2', 'V3', 'V4']:
                     selection = np.array([ _ in np.where(get_roi_data(None, roi)==1)[0] for _ in voxels])

@@ -45,8 +45,8 @@ print(subs)
 #         time.sleep(180)
 # # subs = [sub]'googlenet-inception3a', 'googlenet-conv2'
 # time.sleep(180)
-for cur_layer in ['raw-googlenet-concate']:#'googlenet-maxpool2','googlenet-inception3a', 'googlenet-conv2'
-    for sub in subs[0: 2]:
+for cur_layer in ['raw-googlenet-maxpool1']:#'googlenet-maxpool2','googlenet-inception3a', 'googlenet-conv2'
+    for sub in subs:
         t0 = time.time()
         print(f'!! {sub}')
         # maskname = 'primar-in-MMP' # 

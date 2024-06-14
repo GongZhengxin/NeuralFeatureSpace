@@ -28,7 +28,7 @@ concate_path = pjoin(work_dir, 'prep/roi-concate')
 # save out path
 performance_path = pjoin(work_dir, 'build/roi-concatemodel')
 os.makedirs(performance_path, exist_ok=True)
-inputlayername = 'googlenet-conv2' #'googlenet-maxpool2' # 'googlenet-inception3a' #
+inputlayername = 'googlenet-maxpool1'  #'googlenet-conv2' #'googlenet-maxpool2' # 'googlenet-inception3a' #
 layer = {'name': inputlayername, 'size': net_size_info[inputlayername]}
 layername = layer['name']
 layername = layername.replace('.','')
@@ -56,7 +56,7 @@ def pearson_correlation(y_true, y_pred):
     # 计算并返回皮尔森相关系数
     return pearsonr(y_true, y_pred)[0]
 
-for roi_name in ['V4']:# , , 'V3', 'V2', 'V1' 
+for roi_name in ['V4', 'V3', 'V2', 'V1' ]:# , 
     val_scores, val_corrs = [], []
     test_scores, test_corrs = [], []
     # roi_name = 'V1'
